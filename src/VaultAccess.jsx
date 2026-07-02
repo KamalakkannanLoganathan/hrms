@@ -1,3 +1,5 @@
+"use client";
+
 import React, { useEffect, useMemo, useState } from "react";
 import * as XLSX from "xlsx";
 import {
@@ -56,8 +58,9 @@ function normalizeData(data) {
 }
 
 function loadData() {
+  if (typeof window === "undefined" || !window.localStorage?.getItem) return normalizeData(seedAppData());
   try {
-    const stored = localStorage.getItem(STORAGE_KEY);
+    const stored = window.localStorage.getItem(STORAGE_KEY);
     return normalizeData(stored ? JSON.parse(stored) : seedAppData());
   } catch {
     return normalizeData(seedAppData());
@@ -65,7 +68,9 @@ function loadData() {
 }
 
 function saveData(data) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+  if (typeof window !== "undefined" && window.localStorage?.setItem) {
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+  }
 }
 
 async function apiJson(path, options = {}) {
@@ -149,7 +154,9 @@ function Metric({ label, value, tone }) {
 
 function VaultAccess() {
   const [data, setDataState] = useState(loadData);
-  const [sessionUserId, setSessionUserId] = useState(() => localStorage.getItem(SESSION_KEY) || "");
+  const [sessionUserId, setSessionUserId] = useState(() =>
+    typeof window !== "undefined" && window.localStorage?.getItem ? window.localStorage.getItem(SESSION_KEY) || "" : ""
+  );
   const [view, setView] = useState("dashboard");
   const [toast, setToast] = useState("");
   const [login, setLogin] = useState({ email: "superadmin@eaglercm.example", password: DEFAULT_PASSWORD });
