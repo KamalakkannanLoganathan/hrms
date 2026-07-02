@@ -1,0 +1,17 @@
+services:
+  eagle-rcm-hrms:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: eagle-rcm-hrms:latest
+    container_name: eagle-rcm-hrms
+    restart: unless-stopped
+    env_file:
+      - .env.local
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      APP_URL: https://hrms.terimarevenue.com
+      NEXTAUTH_URL: https://hrms.terimarevenue.com
+    ports:
+      - "3000:3000"
