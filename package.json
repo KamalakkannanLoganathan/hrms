@@ -11,10 +11,10 @@
     "build:vite": "vite build",
     "start:docker-server": "node server/production-server.mjs",
     "preview": "vite preview --host 127.0.0.1",
-    "lint": "node --check src/hrCore.js && node --check server/production-server.mjs && node --check tests/hrCore.test.mjs",
+    "lint": "node --check src/hrCore.js && node --check server/production-server.mjs && node --check app/api/_shared.js && node --check app/api/health/route.js && node --check app/api/auth/login/route.js && node --check app/api/auth/me/route.js && node --check app/api/auth/logout/route.js && node --check app/api/state/route.js && node --check app/api/storage/signed-url/route.js && node --check tests/hrCore.test.mjs",
     "test": "node --test tests/*.test.mjs",
     "test:e2e": "node --test tests/e2e.smoke.test.mjs",
-    "typecheck": "node --check src/hrCore.js && node --check tests/hrCore.test.mjs && node --check server/production-server.mjs",
+    "typecheck": "node --check src/hrCore.js && node --check tests/hrCore.test.mjs && node --check server/production-server.mjs && node --check app/api/_shared.js && node --check app/api/health/route.js && node --check app/api/auth/login/route.js && node --check app/api/auth/me/route.js && node --check app/api/auth/logout/route.js && node --check app/api/state/route.js && node --check app/api/storage/signed-url/route.js",
     "supabase:migration:print": "node -e \"console.log(require('fs').readFileSync('supabase/migrations/001_hrms_app_state.sql','utf8'))\"",
     "docker:build": "docker build -t eagle-rcm-hrms:latest ."
   },

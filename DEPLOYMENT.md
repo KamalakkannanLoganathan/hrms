@@ -15,6 +15,15 @@ This has been fixed by adding a real Next.js app shell:
 
 The existing Eagle RCM portal UI is preserved and rendered through `src/VaultAccess.jsx`.
 
+The Vercel build also includes same-origin API routes:
+
+- `/api/health`
+- `/api/auth/login`
+- `/api/auth/logout`
+- `/api/auth/me`
+- `/api/state`
+- `/api/storage/signed-url`
+
 ## Actual App Folder
 
 The actual Next.js app folder is:
@@ -105,3 +114,19 @@ Docker uses the Vite build and the Node production server. Vercel uses the Next.
 7. Leave Output Directory empty.
 8. Add the environment variables listed above.
 9. Redeploy.
+
+## Post-Deploy Validation
+
+After redeploying, verify:
+
+```bash
+curl https://hrms.terimarevenue.com/api/health
+```
+
+Expected:
+
+```json
+{"ok":true,"storageBucket":"eagle-rcm-hr-private"}
+```
+
+If `/api/health` returns `404`, Vercel is still serving an older deployment and needs a redeploy from the latest `main` branch.
