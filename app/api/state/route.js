@@ -26,9 +26,9 @@ export async function PUT(request) {
   if (!requireCsrf(request, auth.token)) return Response.json({ ok: false, error: "Invalid CSRF token." }, { status: 403 });
   const data = await loadAppState();
   const actor = data.users.find((user) => user.id === auth.session.userId);
-  if (!canPersistState(actor)) return Response.json({ ok: false, error: "Not authorized." }, { status: 403 });
   const body = await request.json().catch(() => ({}));
   validateStatePayload(body.data);
+  if (!canPersistState(actor, data, body.data)) return Response.json({ ok: false, error: "Not authorized." }, { status: 403 });
   await saveAppState(mergeServerOnlyFields(data, body.data));
   return Response.json({ ok: true, csrfToken: csrfToken(auth.token) });
 }

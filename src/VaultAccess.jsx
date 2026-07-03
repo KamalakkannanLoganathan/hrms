@@ -3,9 +3,10 @@
 import React, { useEffect, useMemo, useState } from "react";
 import * as XLSX from "xlsx";
 import {
-  DEFAULT_PASSWORD,
   PERMISSIONS,
+  PERMISSION_LABELS,
   ROLE_LABELS,
+  ROLE_PERMISSIONS,
   ROLES,
   amountInWordsINR,
   applyLeave,
@@ -16,6 +17,7 @@ import {
   buildPayslipHtml,
   canAccessEmployee,
   canAccessPayslip,
+  canManageAdminSection,
   checkIn,
   checkOut,
   createPayrollRun,
@@ -44,9 +46,12 @@ const GLASSMORPHISM_THEME = {
 };
 
 function normalizeData(data) {
+  const seeded = seedAppData();
   return {
+    ...seeded,
     ...data,
     companySettings: {
+      ...seeded.companySettings,
       ...data.companySettings,
       selectedTheme: data.companySettings?.selectedTheme || GLASSMORPHISM_THEME.themeId,
       themeName: data.companySettings?.themeName || GLASSMORPHISM_THEME.themeName,
@@ -54,6 +59,14 @@ function normalizeData(data) {
       secondaryColor: data.companySettings?.secondaryColor || GLASSMORPHISM_THEME.secondaryColor,
       accentColor: data.companySettings?.accentColor || GLASSMORPHISM_THEME.accentColor,
     },
+    payrollSettings: { ...seeded.payrollSettings, ...data.payrollSettings },
+    attendanceSettings: { ...seeded.attendanceSettings, ...data.attendanceSettings },
+    reportSettings: { ...seeded.reportSettings, ...data.reportSettings },
+    notificationSettings: { ...seeded.notificationSettings, ...data.notificationSettings },
+    rolePermissions: { ...seeded.rolePermissions, ...data.rolePermissions },
+    permissionsCatalog: data.permissionsCatalog || seeded.permissionsCatalog,
+    leaveAllocations: data.leaveAllocations || seeded.leaveAllocations,
+    payrollSettingsVersions: data.payrollSettingsVersions || seeded.payrollSettingsVersions,
   };
 }
 
@@ -152,6 +165,57 @@ function Metric({ label, value, tone }) {
   );
 }
 
+function makeId(prefix) {
+  return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+}
+
+function normalizedCode(value) {
+  return String(value || "").trim().toUpperCase().replace(/[^A-Z0-9_]/g, "");
+}
+
+function hasScriptLikeInput(value) {
+  return /<\s*script|javascript:|onerror\s*=|onload\s*=/i.test(String(value || ""));
+}
+
+function withAudit(next, actor, action, entityType, entityId, previousValue = null, newValue = null) {
+  const audit = {
+    id: makeId("audit"),
+    actorUserId: actor?.id || "system",
+    actorRole: actor?.role || "SYSTEM",
+    action,
+    entityType,
+    entityId,
+    previousValue,
+    newValue,
+    ipAddress: "captured-server-side",
+    userAgent: "captured-server-side",
+    timestamp: new Date().toISOString(),
+  };
+  return { ...next, auditLogs: [audit, ...(next.auditLogs || [])] };
+}
+
+function isActive(item) {
+  return item?.active !== false && item?.status !== "inactive";
+}
+
+function employeeCount(data, key, id) {
+  return data.employees.filter((employee) => employee[key] === id && employee.status === "active").length;
+}
+
+function validateCommonRecord(collection, record, currentId, keys = ["name", "code"]) {
+  if (!String(record.name || "").trim()) throw new Error("Name is required.");
+  if (record.code != null && !normalizedCode(record.code)) throw new Error("Code is required.");
+  if (record.description && String(record.description).length > 500) throw new Error("Description is too long.");
+  if (Object.values(record).some(hasScriptLikeInput)) throw new Error("Script-like input is not allowed.");
+  for (const key of keys) {
+    const value = String(record[key] || "").trim().toLowerCase();
+    if (!value) continue;
+    if (collection.some((item) => item.id !== currentId && String(item[key] || "").trim().toLowerCase() === value)) {
+      throw new Error(`Duplicate ${key} is not allowed.`);
+    }
+  }
+}
+
 function VaultAccess() {
   const [data, setDataState] = useState(loadData);
   const [sessionUserId, setSessionUserId] = useState(() =>
@@ -159,7 +223,7 @@ function VaultAccess() {
   );
   const [view, setView] = useState("dashboard");
   const [toast, setToast] = useState("");
-  const [login, setLogin] = useState({ email: "superadmin@eaglercm.example", password: DEFAULT_PASSWORD });
+  const [login, setLogin] = useState({ email: "", password: "" });
   const [authError, setAuthError] = useState("");
   const [employeeDraft, setEmployeeDraft] = useState({
     firstName: "",
@@ -186,6 +250,8 @@ function VaultAccess() {
   const [payrollDraft, setPayrollDraft] = useState({ month: 6, year: 2026 });
   const [selectedPayslipId, setSelectedPayslipId] = useState("");
   const [settingsDraft, setSettingsDraft] = useState(data.companySettings);
+  const [adminTab, setAdminTab] = useState("company");
+  const [adminSearch, setAdminSearch] = useState("");
   const [filters, setFilters] = useState({ department: "all", status: "all", query: "" });
   const [csrfToken, setCsrfToken] = useState("");
   const [serverBacked, setServerBacked] = useState(false);
@@ -210,6 +276,23 @@ function VaultAccess() {
   const pendingCorrections = data.attendanceCorrections.filter((request) => request.status === "pending");
   const currentPayroll = data.payrollRuns[0];
   const selectedPayslip = data.payslips.find((payslip) => payslip.id === selectedPayslipId) || data.payslips[0];
+  const can = (permission) => hasPermission(currentUser, permission, data.rolePermissions);
+  const canManageSection = (section) => canManageAdminSection(currentUser, section, data.rolePermissions);
+  const canOpenAdminConfig = [
+    "companySettings",
+    "departments",
+    "designations",
+    "holidays",
+    "shifts",
+    "attendanceSettings",
+    "leaveTypes",
+    "leavePolicies",
+    "payrollSettings",
+    "salaryComponents",
+    "rolePermissions",
+    "reportSettings",
+    "notificationSettings",
+  ].some((section) => canManageSection(section));
 
   useEffect(() => {
     let active = true;
@@ -496,11 +579,6 @@ function VaultAccess() {
           <div className="brand-tile">ER</div>
           <h1>Employee Self Service Portal</h1>
           <p>Secure access to attendance, leave, payroll, and payslips</p>
-          <div className="login-notes">
-            <strong>Seeded access</strong>
-            <span>superadmin@eaglercm.example / {DEFAULT_PASSWORD}</span>
-            <span>hr@eaglercm.example, payroll@eaglercm.example, boss@eaglercm.example, manager@eaglercm.example, employee@eaglercm.example</span>
-          </div>
         </section>
         <form className="login-card" onSubmit={handleLogin}>
           <h2>Secure login</h2>
@@ -523,14 +601,14 @@ function VaultAccess() {
 
   const navItems = [
     ["dashboard", "Dashboard", true],
-    ["employees", "Employees", hasPermission(currentUser, PERMISSIONS.EMPLOYEE_READ_ALL) || currentUser.role === ROLES.MANAGER || currentUser.role === ROLES.EMPLOYEE],
-    ["attendance", "Attendance", hasPermission(currentUser, PERMISSIONS.ATTENDANCE_SELF) || hasPermission(currentUser, PERMISSIONS.ATTENDANCE_MANAGE)],
-    ["leave", "Leave", hasPermission(currentUser, PERMISSIONS.LEAVE_SELF) || hasPermission(currentUser, PERMISSIONS.LEAVE_APPROVE)],
-    ["payroll", "Payroll", hasPermission(currentUser, PERMISSIONS.PAYROLL_MANAGE) || hasPermission(currentUser, PERMISSIONS.PAYROLL_APPROVE)],
-    ["payslips", "Payslips", hasPermission(currentUser, PERMISSIONS.PAYSLIP_READ_OWN) || hasPermission(currentUser, PERMISSIONS.PAYSLIP_READ_ALL)],
-    ["reports", "Reports", hasPermission(currentUser, PERMISSIONS.REPORTS_HR) || hasPermission(currentUser, PERMISSIONS.REPORTS_PAYROLL)],
-    ["settings", "Settings", hasPermission(currentUser, PERMISSIONS.SETTINGS_MANAGE) || hasPermission(currentUser, PERMISSIONS.EMPLOYEE_MANAGE)],
-    ["audit", "Audit", hasPermission(currentUser, PERMISSIONS.AUDIT_READ)],
+    ["employees", "Employees", can(PERMISSIONS.EMPLOYEE_READ_ALL) || currentUser.role === ROLES.MANAGER || currentUser.role === ROLES.EMPLOYEE],
+    ["attendance", "Attendance", can(PERMISSIONS.ATTENDANCE_SELF) || can(PERMISSIONS.ATTENDANCE_MANAGE)],
+    ["leave", "Leave", can(PERMISSIONS.LEAVE_SELF) || can(PERMISSIONS.LEAVE_APPROVE)],
+    ["payroll", "Payroll", can(PERMISSIONS.PAYROLL_MANAGE) || can(PERMISSIONS.PAYROLL_APPROVE)],
+    ["payslips", "Payslips", can(PERMISSIONS.PAYSLIP_READ_OWN) || can(PERMISSIONS.PAYSLIP_READ_ALL)],
+    ["reports", "Reports", can(PERMISSIONS.REPORTS_HR) || can(PERMISSIONS.REPORTS_PAYROLL)],
+    ["adminConfig", "Admin Configuration", canOpenAdminConfig],
+    ["audit", "Audit", can(PERMISSIONS.AUDIT_READ)],
   ].filter((item) => item[2]);
 
   return (
@@ -646,15 +724,23 @@ function VaultAccess() {
           />
         )}
         {view === "reports" && <Reports onExport={exportRows} currentUser={currentUser} />}
-        {view === "settings" && (
-          <Settings
+        {view === "adminConfig" && (
+          <AdminConfiguration
             data={data}
+            setData={setData}
             currentUser={currentUser}
             draft={settingsDraft}
             setDraft={setSettingsDraft}
+            activeTab={adminTab}
+            setActiveTab={setAdminTab}
+            search={adminSearch}
+            setSearch={setAdminSearch}
+            canManageSection={canManageSection}
+            notify={notify}
             onSave={(event) => {
               event.preventDefault();
-              setData({ ...data, companySettings: settingsDraft });
+              if (!canManageSection("companySettings")) return notify("You are not allowed to edit company settings.");
+              setData(withAudit({ ...data, companySettings: settingsDraft }, currentUser, "Company settings updated", "CompanySettings", "company"));
               notify("Company settings saved.");
             }}
           />
@@ -983,6 +1069,406 @@ function Reports({ onExport, currentUser }) {
   );
 }
 
+const ADMIN_TABS = [
+  ["company", "Company", "companySettings"],
+  ["departments", "Departments", "departments"],
+  ["designations", "Designations", "designations"],
+  ["shifts", "Shifts", "shifts"],
+  ["holidays", "Holidays", "holidays"],
+  ["attendance", "Attendance Settings", "attendanceSettings"],
+  ["leaveTypes", "Leave Types", "leaveTypes"],
+  ["leavePolicies", "Leave Policies", "leavePolicies"],
+  ["leaveAllocations", "Leave Allocation", "leaveAllocations"],
+  ["payroll", "Payroll Settings", "payrollSettings"],
+  ["salary", "Salary Components", "salaryComponents"],
+  ["roles", "Roles & Permissions", "rolePermissions"],
+  ["reports", "Report Settings", "reportSettings"],
+  ["notifications", "Notification Settings", "notificationSettings"],
+  ["audit", "Audit Logs", "auditLogs"],
+];
+
+function AdminConfiguration({ data, setData, currentUser, draft, setDraft, activeTab, setActiveTab, search, setSearch, canManageSection, notify, onSave }) {
+  const tabs = ADMIN_TABS.filter(([, , section]) => canManageSection(section));
+  const currentTab = tabs.some(([id]) => id === activeTab) ? activeTab : tabs[0]?.[0] || "company";
+
+  function saveCollection(collectionKey, record, previous = null) {
+    const collection = data[collectionKey] || [];
+    const exists = collection.some((item) => item.id === record.id);
+    const nextRecord = {
+      ...record,
+      code: record.code != null ? normalizedCode(record.code) : record.code,
+      active: record.active !== false,
+      status: record.active === false ? "inactive" : "active",
+      createdBy: record.createdBy || currentUser.id,
+      updatedBy: currentUser.id,
+      createdAt: record.createdAt || new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    const nextCollection = exists
+      ? collection.map((item) => (item.id === nextRecord.id ? nextRecord : item))
+      : [nextRecord, ...collection];
+    setData(withAudit({ ...data, [collectionKey]: nextCollection }, currentUser, `${collectionKey} ${exists ? "updated" : "created"}`, collectionKey, nextRecord.id, previous, nextRecord));
+    notify(exists ? "Record updated." : "Record created.");
+  }
+
+  function deactivate(collectionKey, record, inUseCount = 0) {
+    if (inUseCount > 0 && !window.confirm(`This record is assigned to ${inUseCount} active employee(s). Deactivate anyway?`)) return;
+    const nextRecord = { ...record, active: false, status: "inactive", updatedBy: currentUser.id, updatedAt: new Date().toISOString() };
+    setData(withAudit({ ...data, [collectionKey]: data[collectionKey].map((item) => (item.id === record.id ? nextRecord : item)) }, currentUser, `${collectionKey} deactivated`, collectionKey, record.id, record, nextRecord));
+    notify("Record deactivated.");
+  }
+
+  return (
+    <div className="stack">
+      <section className="panel admin-tabs">
+        <div className="panel-head">
+          <div>
+            <h2>Admin Configuration</h2>
+            <p className="muted">Configuration changes are permission-gated in the UI and server API.</p>
+          </div>
+          <input placeholder="Search configuration" value={search} onChange={(event) => setSearch(event.target.value)} />
+        </div>
+        <div className="tabbar">
+          {tabs.map(([id, label]) => (
+            <button type="button" key={id} className={currentTab === id ? "active" : ""} onClick={() => setActiveTab(id)}>
+              {label}
+            </button>
+          ))}
+        </div>
+      </section>
+      {currentTab === "company" && <Settings data={data} currentUser={currentUser} draft={draft} setDraft={setDraft} onSave={onSave} />}
+      {currentTab === "departments" && (
+        <ConfigManager
+          title="Departments"
+          collectionKey="departments"
+          data={data}
+          search={search}
+          fields={[["name", "Department name", "text"], ["code", "Department code", "text"], ["departmentHeadId", "Department head", "employee"], ["description", "Description", "textarea"]]}
+          columns={(item) => [`${item.code} / ${item.name}`, data.employees.find((employee) => employee.id === item.departmentHeadId)?.fullName || "-", `${employeeCount(data, "departmentId", item.id)} employees`]}
+          defaults={{ name: "", code: "", departmentHeadId: "", description: "", active: true }}
+          inUseCount={(item) => employeeCount(data, "departmentId", item.id)}
+          validate={(record, currentId) => {
+            validateCommonRecord(data.departments, record, currentId, ["name", "code"]);
+            if (!/^[A-Z0-9_]+$/.test(normalizedCode(record.code))) throw new Error("Department code must be uppercase alphanumeric.");
+          }}
+          onSave={saveCollection}
+          onDeactivate={deactivate}
+        />
+      )}
+      {currentTab === "designations" && (
+        <ConfigManager
+          title="Designations"
+          collectionKey="designations"
+          data={data}
+          search={search}
+          fields={[["name", "Designation name", "text"], ["code", "Designation code", "text"], ["departmentId", "Department", "department"], ["level", "Level / grade", "text"], ["description", "Description", "textarea"]]}
+          columns={(item) => [`${item.code} / ${item.name}`, data.departments.find((department) => department.id === item.departmentId)?.name || "-", item.level || "-"]}
+          defaults={{ name: "", code: "", departmentId: data.departments[0]?.id || "", level: "", description: "", active: true }}
+          inUseCount={(item) => employeeCount(data, "designationId", item.id)}
+          validate={(record, currentId) => validateCommonRecord(data.designations.filter((item) => item.departmentId === record.departmentId), record, currentId, ["name", "code"])}
+          onSave={saveCollection}
+          onDeactivate={deactivate}
+        />
+      )}
+      {currentTab === "shifts" && (
+        <ConfigManager
+          title="Shifts"
+          collectionKey="shifts"
+          data={data}
+          search={search}
+          fields={[["name", "Shift name", "text"], ["code", "Shift code", "text"], ["startTime", "Start time", "time"], ["endTime", "End time", "time"], ["breakMinutes", "Break minutes", "number"], ["graceMinutes", "Grace minutes", "number"], ["minimumFullDayHours", "Full-day hours", "number"], ["minimumHalfDayHours", "Half-day hours", "number"], ["lateMarkThresholdMinutes", "Late threshold", "number"], ["earlyExitThresholdMinutes", "Early exit threshold", "number"], ["nightShift", "Night shift", "checkbox"], ["description", "Description", "textarea"]]}
+          columns={(item) => [`${item.code} / ${item.name}`, `${item.startTime}-${item.endTime}`, `${employeeCount(data, "shiftId", item.id)} employees`]}
+          defaults={{ name: "", code: "", startTime: "09:00", endTime: "18:00", breakMinutes: 60, graceMinutes: 10, minimumFullDayHours: 8, minimumHalfDayHours: 4, lateMarkThresholdMinutes: 10, earlyExitThresholdMinutes: 10, nightShift: false, description: "", active: true }}
+          inUseCount={(item) => employeeCount(data, "shiftId", item.id)}
+          validate={(record, currentId) => {
+            validateCommonRecord(data.shifts, record, currentId, ["name", "code"]);
+            if (Number(record.graceMinutes) < 0) throw new Error("Grace period cannot be negative.");
+            if (Number(record.minimumFullDayHours) <= Number(record.minimumHalfDayHours)) throw new Error("Full-day hours must be greater than half-day hours.");
+            if (!record.nightShift && record.endTime <= record.startTime) throw new Error("End time must be after start time unless night shift is enabled.");
+          }}
+          onSave={saveCollection}
+          onDeactivate={deactivate}
+        />
+      )}
+      {currentTab === "holidays" && (
+        <ConfigManager
+          title="Holidays"
+          collectionKey="holidays"
+          data={data}
+          search={search}
+          fields={[["name", "Holiday name", "text"], ["date", "Holiday date", "date"], ["type", "Holiday type", "holidayType"], ["location", "Location", "text"], ["departmentId", "Department", "departmentAll"], ["paid", "Paid holiday", "checkbox"], ["recurringYearly", "Recurring yearly", "checkbox"], ["description", "Description", "textarea"]]}
+          columns={(item) => [item.date, item.name, `${item.type || "company"} / ${item.paid ? "Paid" : "Unpaid"}`]}
+          defaults={{ name: "", date: new Date().toISOString().slice(0, 10), type: "company", location: "", departmentId: "all", paid: true, recurringYearly: false, description: "", active: true }}
+          validate={(record, currentId) => {
+            validateCommonRecord(data.holidays, record, currentId, ["name"]);
+            if (!record.date || Number.isNaN(new Date(record.date).getTime())) throw new Error("Valid holiday date is required.");
+            if (data.holidays.some((item) => item.id !== currentId && item.date === record.date && String(item.name).toLowerCase() === String(record.name).toLowerCase())) throw new Error("Duplicate holiday for date and name.");
+          }}
+          onSave={saveCollection}
+          onDeactivate={deactivate}
+        />
+      )}
+      {currentTab === "attendance" && <SettingsObjectPanel title="Attendance Settings" data={data} currentUser={currentUser} objectKey="attendanceSettings" fields={[["allowEmployeeCheckIn", "Allow check-in", "checkbox"], ["allowEmployeeCheckOut", "Allow check-out", "checkbox"], ["allowMissedPunchRequest", "Allow missed punch", "checkbox"], ["allowAttendanceCorrectionRequest", "Allow correction", "checkbox"], ["maxCorrectionRequestDaysBack", "Max correction days back", "number"], ["requireCorrectionReason", "Require reason", "checkbox"], ["requireManagerApproval", "Manager approval", "checkbox"], ["requireHrApproval", "HR approval", "checkbox"], ["autoAbsentIfNoCheckIn", "Auto absent", "checkbox"], ["autoHalfDayIfNoCheckout", "Auto half-day", "checkbox"], ["allowWorkOnHoliday", "Allow holiday work", "checkbox"], ["allowWorkOnWeeklyOff", "Allow weekly-off work", "checkbox"], ["attendanceLockAfterPayroll", "Lock after payroll", "checkbox"]]} setData={setData} notify={notify} />}
+      {currentTab === "leaveTypes" && <LeaveTypesManager data={data} search={search} onSave={saveCollection} onDeactivate={deactivate} />}
+      {currentTab === "leavePolicies" && <LeavePolicyPanel data={data} setData={setData} currentUser={currentUser} search={search} notify={notify} />}
+      {currentTab === "leaveAllocations" && <LeaveAllocationPanel data={data} setData={setData} currentUser={currentUser} notify={notify} />}
+      {currentTab === "payroll" && <SettingsObjectPanel title="Payroll Settings" data={data} currentUser={currentUser} objectKey="payrollSettings" fields={[["payrollCycle", "Payroll cycle", "text"], ["salaryCalculationBasis", "Salary basis", "salaryBasis"], ["defaultSalaryDays", "Default salary days", "number"], ["payrollMonthClosingDay", "Closing day", "number"], ["attendanceLockDay", "Attendance lock day", "number"], ["payrollApprovalRequired", "Payroll approval", "checkbox"], ["bossApprovalRequired", "Boss approval", "checkbox"], ["payslipPublishMode", "Payslip publish mode", "publishMode"], ["lopCalculationMethod", "LOP method", "lopMethod"], ["halfDayDeductionRule", "Half-day deduction", "number"], ["overtimeEnabled", "Overtime enabled", "checkbox"], ["overtimeCalculationMethod", "Overtime method", "overtimeMethod"], ["advanceDeductionEnabled", "Advance deduction", "checkbox"], ["roundingMethod", "Rounding", "rounding"], ["currency", "Currency", "text"], ["payslipNumberFormat", "Payslip number format", "text"], ["effectiveFrom", "Effective from", "date"]]} validate={validatePayrollSettings} setData={setData} notify={notify} />}
+      {currentTab === "salary" && <SalaryComponentManager data={data} search={search} onSave={saveCollection} onDeactivate={deactivate} />}
+      {currentTab === "roles" && <RolePermissionPanel data={data} setData={setData} currentUser={currentUser} notify={notify} />}
+      {currentTab === "reports" && <SettingsObjectPanel title="Report Settings" data={data} currentUser={currentUser} objectKey="reportSettings" fields={[["showLogo", "Show logo", "checkbox"], ["companyHeader", "Company header", "text"], ["dateFormat", "Date format", "text"], ["maskBankAccountInExports", "Mask bank accounts", "checkbox"], ["payrollExportPermission", "Payroll export permission", "permission"], ["employeeMasterExportPermission", "Employee export permission", "permission"]]} setData={setData} notify={notify} />}
+      {currentTab === "notifications" && <SettingsObjectPanel title="Notification Settings" data={data} currentUser={currentUser} objectKey="notificationSettings" fields={[["inAppEnabled", "In-app enabled", "checkbox"], ["emailEnabled", "Email enabled", "checkbox"], ["notifyManagerOnLeaveRequest", "Manager on leave request", "checkbox"], ["notifyHrOnLeaveRequest", "HR on leave request", "checkbox"], ["notifyEmployeeOnApprovalRejection", "Employee approval/rejection", "checkbox"], ["notifyEmployeeOnPayslipPublished", "Employee payslip published", "checkbox"], ["notifyPayrollAdminMissingAttendance", "Payroll missing attendance", "checkbox"], ["notifyBossPayrollReady", "Boss payroll ready", "checkbox"]]} setData={setData} notify={notify} />}
+      {currentTab === "audit" && <Audit data={data} search={search} />}
+    </div>
+  );
+}
+
+function ConfigManager({ title, collectionKey, data, search, fields, columns, defaults, inUseCount = () => 0, validate, onSave, onDeactivate }) {
+  const [draft, setDraft] = useState({ ...defaults });
+  const [editingId, setEditingId] = useState("");
+  const collection = data[collectionKey] || [];
+  const q = search.trim().toLowerCase();
+  const rows = collection.filter((item) => !q || JSON.stringify(item).toLowerCase().includes(q));
+
+  function reset() {
+    setEditingId("");
+    setDraft({ ...defaults });
+  }
+
+  function submit(event) {
+    event.preventDefault();
+    try {
+      const record = { ...draft, id: editingId || makeId(collectionKey) };
+      validate?.(record, editingId);
+      onSave(collectionKey, record, collection.find((item) => item.id === editingId) || null);
+      reset();
+    } catch (error) {
+      window.alert(error.message);
+    }
+  }
+
+  return (
+    <section className="panel">
+      <div className="panel-head"><h2>{title}</h2><Badge>{rows.length} records</Badge></div>
+      <form className="form-grid" onSubmit={submit}>
+        {fields.map(([key, label, type]) => (
+          <Field key={key} label={label}><AdminInput type={type} value={draft[key]} onChange={(value) => setDraft({ ...draft, [key]: value })} data={data} /></Field>
+        ))}
+        <Field label="Status"><select value={draft.active === false ? "inactive" : "active"} onChange={(event) => setDraft({ ...draft, active: event.target.value === "active", status: event.target.value })}><option value="active">Active</option><option value="inactive">Inactive</option></select></Field>
+        <div className="actions form-actions"><button className="primary">{editingId ? "Update" : "Create"}</button>{editingId && <button type="button" className="secondary" onClick={reset}>Cancel</button>}</div>
+      </form>
+      <div className="table admin-table">
+        <div className="tr th"><span>Record</span><span>Detail</span><span>Usage</span><span>Status</span><span>Actions</span></div>
+        {rows.map((item) => {
+          const cells = columns(item);
+          return (
+            <div className="tr" key={item.id}>
+              <span><strong>{cells[0]}</strong><small>{item.description || item.id}</small></span>
+              <span>{cells[1]}</span>
+              <span>{cells[2]}</span>
+              <span><Badge tone={isActive(item) ? "good" : "warn"}>{isActive(item) ? "active" : "inactive"}</Badge></span>
+              <span className="inline-actions"><button className="secondary small" onClick={() => { setEditingId(item.id); setDraft({ ...defaults, ...item }); }}>Edit</button>{isActive(item) && <button className="danger small" onClick={() => onDeactivate(collectionKey, item, inUseCount(item))}>Deactivate</button>}</span>
+            </div>
+          );
+        })}
+        {!rows.length && <div className="empty-state">No records match the current search.</div>}
+      </div>
+    </section>
+  );
+}
+
+function AdminInput({ type, value, onChange, data }) {
+  if (type === "textarea") return <textarea value={value || ""} onChange={(event) => onChange(event.target.value)} />;
+  if (type === "checkbox") return <input type="checkbox" checked={Boolean(value)} onChange={(event) => onChange(event.target.checked)} />;
+  if (type === "department" || type === "departmentAll") return <select value={value || (type === "departmentAll" ? "all" : "")} onChange={(event) => onChange(event.target.value)}>{type === "departmentAll" && <option value="all">All departments</option>}{data.departments.map((department) => <option key={department.id} value={department.id}>{department.name}</option>)}</select>;
+  if (type === "employee") return <select value={value || ""} onChange={(event) => onChange(event.target.value)}><option value="">Not assigned</option>{data.employees.map((employee) => <option key={employee.id} value={employee.id}>{employee.fullName}</option>)}</select>;
+  if (type === "holidayType") return <OptionSelect value={value || "company"} onChange={onChange} options={["national", "regional", "company", "optional"]} />;
+  if (type === "salaryBasis") return <OptionSelect value={value || "calendar_days"} onChange={onChange} options={["calendar_days", "working_days", "fixed_30_days"]} />;
+  if (type === "publishMode") return <OptionSelect value={value || "manual"} onChange={onChange} options={["auto_after_lock", "manual"]} />;
+  if (type === "lopMethod") return <OptionSelect value={value || "gross_calendar_days"} onChange={onChange} options={["gross_calendar_days", "gross_working_days", "gross_fixed_30_days"]} />;
+  if (type === "overtimeMethod") return <OptionSelect value={value || "manual"} onChange={onChange} options={["fixed_amount", "hourly_rate", "manual"]} />;
+  if (type === "rounding") return <OptionSelect value={value || "nearest_rupee"} onChange={onChange} options={["none", "nearest_rupee", "round_up", "round_down"]} />;
+  if (type === "componentType") return <OptionSelect value={value || "earning"} onChange={onChange} options={["earning", "deduction"]} />;
+  if (type === "calculationType") return <OptionSelect value={value || "manual"} onChange={onChange} options={["fixed", "percentage", "manual", "formula"]} />;
+  if (type === "permission") return <OptionSelect value={value || PERMISSIONS.REPORTS_HR} onChange={onChange} options={Object.values(PERMISSIONS)} labels={PERMISSION_LABELS} />;
+  return <input type={type || "text"} value={value ?? ""} onChange={(event) => onChange(type === "number" ? Number(event.target.value) : event.target.value)} />;
+}
+
+function OptionSelect({ value, onChange, options, labels = {} }) {
+  return <select value={value} onChange={(event) => onChange(event.target.value)}>{options.map((option) => <option key={option} value={option}>{labels[option] || option}</option>)}</select>;
+}
+
+function validatePayrollSettings(record) {
+  if (Number(record.payrollMonthClosingDay) < 1 || Number(record.payrollMonthClosingDay) > 31) throw new Error("Payroll closing day must be 1-31.");
+  if (Number(record.attendanceLockDay) < 1 || Number(record.attendanceLockDay) > 31) throw new Error("Attendance lock day must be 1-31.");
+  if (!record.effectiveFrom) throw new Error("Effective date is required.");
+}
+
+function SettingsObjectPanel({ title, data, currentUser, objectKey, fields, setData, notify, validate }) {
+  const [draft, setDraft] = useState(data[objectKey] || {});
+  useEffect(() => setDraft(data[objectKey] || {}), [data, objectKey]);
+  function submit(event) {
+    event.preventDefault();
+    try {
+      validate?.(draft);
+      const nextRecord = { ...draft, updatedBy: currentUser.id, updatedAt: new Date().toISOString() };
+      const versions = objectKey === "payrollSettings" ? { payrollSettingsVersions: [{ ...nextRecord, id: makeId("payroll_settings_version") }, ...(data.payrollSettingsVersions || [])] } : {};
+      setData(withAudit({ ...data, [objectKey]: nextRecord, ...versions }, currentUser, `${objectKey} updated`, objectKey, nextRecord.id || objectKey, data[objectKey], nextRecord));
+      notify("Settings saved.");
+    } catch (error) {
+      window.alert(error.message);
+    }
+  }
+  return <form className="panel" onSubmit={submit}><div className="panel-head"><h2>{title}</h2><Badge tone="good">Effective</Badge></div><div className="form-grid">{fields.map(([key, label, type]) => <Field key={key} label={label}><AdminInput type={type} value={draft[key]} onChange={(value) => setDraft({ ...draft, [key]: value })} data={data} /></Field>)}</div><button className="primary">Save settings</button></form>;
+}
+
+function LeaveTypesManager({ data, search, onSave, onDeactivate }) {
+  return <ConfigManager title="Leave Types" collectionKey="leaveTypes" data={data} search={search} fields={[["name", "Leave type name", "text"], ["code", "Leave code", "text"], ["color", "Badge color", "color"], ["paid", "Paid", "checkbox"], ["requiresApproval", "Requires approval", "checkbox"], ["halfDayAllowed", "Allows half-day", "checkbox"], ["allowNegativeBalance", "Allows negative balance", "checkbox"], ["documentRequired", "Requires document", "checkbox"], ["countsTowardLop", "Counts as LOP", "checkbox"], ["accrualBased", "Accrual based", "checkbox"], ["carryForwardAllowed", "Carry-forward", "checkbox"], ["visibleInEss", "Visible in ESS", "checkbox"], ["description", "Description", "textarea"]]} columns={(item) => [`${item.code} / ${item.name}`, item.paid ? "Paid" : "Unpaid", item.visibleInEss ? "ESS visible" : "Hidden"]} defaults={{ name: "", code: "", color: "#2563EB", paid: true, requiresApproval: true, halfDayAllowed: true, allowNegativeBalance: false, documentRequired: false, countsTowardLop: false, accrualBased: true, carryForwardAllowed: false, visibleInEss: true, active: true }} inUseCount={(item) => data.leaveLedgers.filter((ledger) => ledger.leaveTypeId === item.id).length} validate={(record, currentId) => validateCommonRecord(data.leaveTypes, record, currentId, ["name", "code"])} onSave={onSave} onDeactivate={onDeactivate} />;
+}
+
+function SalaryComponentManager({ data, search, onSave, onDeactivate }) {
+  return <ConfigManager title="Salary Components" collectionKey="salaryComponents" data={data} search={search} fields={[["name", "Component name", "text"], ["code", "Component code", "text"], ["type", "Type", "componentType"], ["calculationType", "Calculation", "calculationType"], ["percentageBase", "Base", "text"], ["defaultAmount", "Default value", "number"], ["displayOnPayslip", "Display on payslip", "checkbox"], ["sortOrder", "Sort order", "number"], ["effectiveFrom", "Effective from", "date"]]} columns={(item) => [`${item.code} / ${item.name}`, item.type, `${item.calculationType} / ${item.defaultAmount}`]} defaults={{ name: "", code: "", type: "earning", calculationType: "manual", percentageBase: "", defaultAmount: 0, displayOnPayslip: true, sortOrder: 50, effectiveFrom: new Date().toISOString().slice(0, 10), active: true }} validate={(record, currentId) => validateCommonRecord(data.salaryComponents, record, currentId, ["name", "code"])} onSave={onSave} onDeactivate={onDeactivate} />;
+}
+
+function LeavePolicyPanel({ data, setData, currentUser, search, notify }) {
+  const [draft, setDraft] = useState({ name: "", code: "", accrualFrequency: "monthly", effectiveFrom: new Date().toISOString().slice(0, 10), active: true });
+  const q = search.trim().toLowerCase();
+  const policies = data.leavePolicies.filter((policy) => !q || JSON.stringify(policy).toLowerCase().includes(q));
+
+  function save(event) {
+    event.preventDefault();
+    try {
+      validateCommonRecord(data.leavePolicies, draft, "", ["name", "code"]);
+      const policy = {
+        ...draft,
+        id: makeId("policy"),
+        code: normalizedCode(draft.code),
+        applicableDepartmentIds: ["all"],
+        applicableDesignationIds: ["all"],
+        employmentTypes: ["full_time"],
+        leaveYearStartMonth: 1,
+        leaveYearEndMonth: 12,
+        status: "active",
+        approvalFlow: ["manager", "hr"],
+        rules: data.leaveTypes.map((type) => ({
+          id: makeId("policy_rule"),
+          leaveTypeId: type.id,
+          openingBalance: 0,
+          monthlyAccrual: Number(type.monthlyAccrual || 0),
+          yearlyQuota: Number(type.yearlyAccrual || 0),
+          maxBalance: Number(type.maxBalance || 0),
+          carryForwardAllowed: Boolean(type.carryForwardAllowed),
+          carryForwardLimit: Number(type.carryForwardLimit || 0),
+          expiryRule: "end_of_leave_year",
+          negativeBalanceAllowed: Boolean(type.allowNegativeBalance),
+          maxConsecutiveDays: 5,
+          maxApplicationsPerMonth: 3,
+          probationApplicable: false,
+          encashmentAllowed: false,
+          deductWeeklyOffs: false,
+          deductHolidays: false,
+        })),
+        createdBy: currentUser.id,
+        updatedBy: currentUser.id,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      setData(withAudit({ ...data, leavePolicies: [policy, ...data.leavePolicies] }, currentUser, "Leave policy created", "LeavePolicy", policy.id, null, policy));
+      setDraft({ name: "", code: "", accrualFrequency: "monthly", effectiveFrom: new Date().toISOString().slice(0, 10), active: true });
+      notify("Leave policy created.");
+    } catch (error) {
+      window.alert(error.message);
+    }
+  }
+
+  return (
+    <section className="panel">
+      <h2>Leave Policies</h2>
+      <form className="form-grid" onSubmit={save}>
+        <Field label="Policy name"><input value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} /></Field>
+        <Field label="Policy code"><input value={draft.code} onChange={(event) => setDraft({ ...draft, code: event.target.value })} /></Field>
+        <Field label="Accrual frequency"><OptionSelect value={draft.accrualFrequency} onChange={(value) => setDraft({ ...draft, accrualFrequency: value })} options={["monthly", "quarterly", "yearly", "manual"]} /></Field>
+        <Field label="Effective from"><input type="date" value={draft.effectiveFrom} onChange={(event) => setDraft({ ...draft, effectiveFrom: event.target.value })} /></Field>
+        <button className="primary">Create policy</button>
+      </form>
+      <div className="cards">
+        {policies.map((policy) => <div className="mini-card" key={policy.id}><strong>{policy.code} / {policy.name}</strong><span>{policy.accrualFrequency} accrual / effective {policy.effectiveFrom} / {policy.rules?.length || 0} rules</span><Badge tone={isActive(policy) ? "good" : "warn"}>{isActive(policy) ? "active" : "inactive"}</Badge></div>)}
+      </div>
+    </section>
+  );
+}
+
+function LeaveAllocationPanel({ data, setData, currentUser, notify }) {
+  const [draft, setDraft] = useState({ employeeId: data.employees[0]?.id || "", leavePolicyId: data.leavePolicies[0]?.id || "", leaveTypeId: data.leaveTypes[0]?.id || "", days: 1, reason: "" });
+
+  function allocate(event) {
+    event.preventDefault();
+    try {
+      if (!draft.reason.trim()) throw new Error("Manual adjustment reason is required.");
+      if (Number(draft.days) === 0) throw new Error("Adjustment days cannot be zero.");
+      const allocation = { id: makeId("allocation"), employeeId: draft.employeeId, leavePolicyId: draft.leavePolicyId, effectiveFrom: new Date().toISOString().slice(0, 10), status: "active", reason: draft.reason, createdBy: currentUser.id, updatedBy: currentUser.id, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+      const ledger = { id: makeId("ledger"), employeeId: draft.employeeId, leaveTypeId: draft.leaveTypeId, source: "manual_adjustment", referenceId: allocation.id, days: Number(draft.days), note: draft.reason, createdAt: new Date().toISOString() };
+      setData(withAudit({ ...data, leaveAllocations: [allocation, ...data.leaveAllocations], leaveLedgers: [ledger, ...data.leaveLedgers] }, currentUser, "Leave manually allocated", "LeaveAllocation", allocation.id, null, { allocation, ledger }));
+      notify("Leave allocation posted to ledger.");
+    } catch (error) {
+      window.alert(error.message);
+    }
+  }
+
+  return (
+    <section className="panel">
+      <h2>Leave Allocation and Ledger</h2>
+      <form className="form-grid" onSubmit={allocate}>
+        <Field label="Employee"><select value={draft.employeeId} onChange={(event) => setDraft({ ...draft, employeeId: event.target.value })}>{data.employees.map((employee) => <option key={employee.id} value={employee.id}>{employee.fullName}</option>)}</select></Field>
+        <Field label="Policy"><select value={draft.leavePolicyId} onChange={(event) => setDraft({ ...draft, leavePolicyId: event.target.value })}>{data.leavePolicies.map((policy) => <option key={policy.id} value={policy.id}>{policy.name}</option>)}</select></Field>
+        <Field label="Leave type"><select value={draft.leaveTypeId} onChange={(event) => setDraft({ ...draft, leaveTypeId: event.target.value })}>{data.leaveTypes.map((type) => <option key={type.id} value={type.id}>{type.name}</option>)}</select></Field>
+        <Field label="Days"><input type="number" step="0.5" value={draft.days} onChange={(event) => setDraft({ ...draft, days: event.target.value })} /></Field>
+        <Field label="Reason"><input value={draft.reason} onChange={(event) => setDraft({ ...draft, reason: event.target.value })} /></Field>
+        <button className="primary">Post allocation</button>
+      </form>
+      <div className="table admin-table">
+        <div className="tr th"><span>Employee</span><span>Leave type</span><span>Source</span><span>Days</span><span>Note</span></div>
+        {data.leaveLedgers.slice(0, 30).map((ledger) => <div className="tr" key={ledger.id}><span>{data.employees.find((employee) => employee.id === ledger.employeeId)?.fullName}</span><span>{data.leaveTypes.find((type) => type.id === ledger.leaveTypeId)?.name}</span><span>{ledger.source}</span><span>{ledger.days}</span><span>{ledger.note}</span></div>)}
+      </div>
+    </section>
+  );
+}
+
+function RolePermissionPanel({ data, setData, currentUser, notify }) {
+  const [draft, setDraft] = useState(data.rolePermissions || ROLE_PERMISSIONS);
+  useEffect(() => setDraft(data.rolePermissions || ROLE_PERMISSIONS), [data.rolePermissions]);
+  const permissions = Object.values(PERMISSIONS);
+
+  function toggle(role, permission) {
+    if (role === ROLES.SUPER_ADMIN) return;
+    const current = new Set(draft[role] || []);
+    if (current.has(permission)) current.delete(permission);
+    else current.add(permission);
+    setDraft({ ...draft, [role]: [...current] });
+  }
+
+  function save() {
+    if (!draft[ROLES.SUPER_ADMIN]?.includes(PERMISSIONS.ROLE_MANAGE)) return window.alert("Super Admin must retain role management.");
+    setData(withAudit({ ...data, rolePermissions: draft }, currentUser, "Role permissions updated", "RolePermissions", "matrix", data.rolePermissions, draft));
+    notify("Role permissions saved.");
+  }
+
+  return (
+    <section className="panel">
+      <div className="panel-head"><h2>Role Privileges / Permissions</h2><button className="primary" onClick={save}>Save matrix</button></div>
+      <div className="permission-matrix">
+        <div className="permission-row permission-head"><span>Permission</span>{Object.values(ROLES).map((role) => <span key={role}>{ROLE_LABELS[role]}</span>)}</div>
+        {permissions.map((permission) => (
+          <div className="permission-row" key={permission}>
+            <span><strong>{PERMISSION_LABELS[permission] || permission}</strong><small>{permission}</small></span>
+            {Object.values(ROLES).map((role) => <label key={`${role}_${permission}`} className="check-cell"><input type="checkbox" disabled={role === ROLES.SUPER_ADMIN} checked={(draft[role] || []).includes(permission)} onChange={() => toggle(role, permission)} /></label>)}
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+
 function Settings({ data, currentUser, draft, setDraft, onSave }) {
   function resetTheme() {
     setDraft({
@@ -1075,13 +1561,15 @@ function ConfigList({ title, items }) {
   return <div className="panel"><h2>{title}</h2><div className="summary-list">{items.map((item) => <Info key={item} label={title} value={item} />)}</div></div>;
 }
 
-function Audit({ data }) {
+function Audit({ data, search = "" }) {
+  const q = search.trim().toLowerCase();
+  const logs = data.auditLogs.filter((item) => !q || [item.actorRole, item.action, item.entityType, item.entityId].some((value) => String(value || "").toLowerCase().includes(q)));
   return (
     <section className="panel">
       <h2>Audit logs</h2>
       <div className="table audit">
         <div className="tr th"><span>Time</span><span>Actor</span><span>Action</span><span>Entity</span><span>ID</span></div>
-        {data.auditLogs.map((item) => <div className="tr" key={item.id}><span>{formatDate(item.timestamp)}</span><span>{item.actorRole}</span><span>{item.action}</span><span>{item.entityType}</span><span>{item.entityId}</span></div>)}
+        {logs.map((item) => <div className="tr" key={item.id}><span>{formatDate(item.timestamp)}</span><span>{item.actorRole}</span><span>{item.action}</span><span>{item.entityType}</span><span>{item.entityId}</span></div>)}
       </div>
     </section>
   );
@@ -1222,17 +1710,6 @@ const styles = `
     padding: clamp(22px, 4vw, 30px);
     animation: fadeUp 320ms ease 80ms both;
   }
-  .login-notes {
-    display: grid;
-    gap: 8px;
-    max-width: 760px;
-    padding: 15px;
-    border: 1px solid rgba(255,255,255,0.62);
-    border-radius: 20px;
-    background: rgba(255,255,255,0.38);
-    color: var(--color-text-secondary);
-    backdrop-filter: blur(14px);
-  }
   .field { display: grid; gap: 7px; color: var(--color-text-secondary); font-size: 12px; font-weight: 850; }
   input, select, textarea {
     width: 100%;
@@ -1359,6 +1836,28 @@ const styles = `
   .panel-head, .actions, .inline-actions { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
   .actions, .inline-actions { justify-content: flex-start; }
   .filters, .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); gap: 12px; margin-bottom: 14px; }
+  .admin-tabs { display: grid; gap: 14px; }
+  .admin-tabs .panel-head input { max-width: 320px; }
+  .tabbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .tabbar button {
+    min-height: 36px;
+    border-radius: 999px;
+    padding: 0 12px;
+    background: rgba(255,255,255,0.68);
+    color: var(--color-text-secondary);
+    border: 1px solid rgba(148, 163, 184, 0.32);
+    font-weight: 850;
+  }
+  .tabbar button.active {
+    background: linear-gradient(135deg, var(--color-primary), var(--color-secondary));
+    color: white;
+    box-shadow: var(--shadow-button);
+  }
+  .form-actions { align-self: end; padding-top: 22px; }
   .table {
     display: grid;
     overflow-x: auto;
@@ -1382,6 +1881,7 @@ const styles = `
   .tr:hover:not(.th) { background: var(--table-row-hover); }
   .tr:last-child { border-bottom: 0; }
   .audit .tr { grid-template-columns: repeat(5, minmax(140px, 1fr)); }
+  .admin-table .tr { grid-template-columns: minmax(220px, 1.25fr) minmax(150px, 1fr) minmax(130px, 0.8fr) minmax(100px, 0.7fr) minmax(180px, 1fr); }
   .th {
     position: sticky;
     top: 0;
@@ -1424,6 +1924,42 @@ const styles = `
   .mini-card span { color: var(--color-text-muted); line-height: 1.45; }
   .wide { grid-column: 1 / -1; }
   .summary-list { display: grid; gap: 10px; }
+  .empty-state {
+    min-width: 880px;
+    padding: 18px 0;
+    color: var(--color-text-muted);
+    font-weight: 850;
+  }
+  .permission-matrix {
+    overflow-x: auto;
+    background: rgba(255,255,255,0.92);
+    border: 1px solid rgba(226, 232, 240, 0.9);
+    border-radius: 20px;
+    padding: 10px;
+  }
+  .permission-row {
+    min-width: 980px;
+    display: grid;
+    grid-template-columns: minmax(260px, 1.4fr) repeat(6, minmax(120px, 1fr));
+    gap: 10px;
+    align-items: center;
+    padding: 10px;
+    border-bottom: 1px solid #e2e8f0;
+  }
+  .permission-row:last-child { border-bottom: 0; }
+  .permission-head {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: var(--table-header-bg);
+    border-radius: 14px;
+    color: var(--color-text-secondary);
+    font-size: 12px;
+    font-weight: 950;
+    text-transform: uppercase;
+  }
+  .check-cell { display: grid; place-items: center; }
+  .check-cell input { width: 18px; min-height: 18px; }
   .info { gap: 5px; padding: 11px; background: rgba(248,250,252,0.78); }
   .info span { color: var(--color-text-muted); font-size: 12px; font-weight: 900; }
   .info strong { overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }

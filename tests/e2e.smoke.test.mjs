@@ -2,15 +2,19 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import test from "node:test";
 
-test("production deployment assets are present", () => {
-  assert.equal(existsSync("Dockerfile"), true);
-  assert.equal(existsSync("docker-compose.yml"), true);
-  assert.equal(existsSync("deploy/nginx-hrms.terimarevenue.com.conf"), true);
+test("Next.js deployment assets are present", () => {
+  assert.equal(existsSync("app/page.jsx"), true);
+  assert.equal(existsSync("app/layout.jsx"), true);
+  assert.equal(existsSync("vercel.json"), true);
 });
 
-test("docker compose targets the hrms subdomain", () => {
-  const compose = readFileSync("docker-compose.yml", "utf8");
-  assert.match(compose, /https:\/\/hrms\.terimarevenue\.com/);
+test("package scripts use Next.js only", () => {
+  const pkg = JSON.parse(readFileSync("package.json", "utf8"));
+  assert.equal(pkg.scripts.dev, "next dev");
+  assert.equal(pkg.scripts.build, "next build");
+  assert.equal(pkg.scripts.start, "next start");
+  assert.deepEqual(Object.keys(pkg.dependencies).sort(), ["bcryptjs", "next", "react", "react-dom", "xlsx"]);
+  assert.equal(Object.keys(pkg.scripts).every((script) => !script.includes("container")), true);
 });
 
 test("supabase migration removes direct browser access through RLS", () => {

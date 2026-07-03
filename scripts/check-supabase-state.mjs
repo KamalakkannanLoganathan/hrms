@@ -16,5 +16,21 @@ const response = await fetch(url, {
   },
 });
 
-console.log(JSON.stringify({ status: response.status, contentType: response.headers.get("content-type") }));
-console.log((await response.text()).slice(0, 1000));
+const text = await response.text();
+let rowCount = 0;
+let stateKeys = [];
+try {
+  const rows = JSON.parse(text);
+  rowCount = Array.isArray(rows) ? rows.length : 0;
+  stateKeys = rows?.[0]?.data ? Object.keys(rows[0].data).sort() : [];
+} catch {
+  stateKeys = [];
+}
+
+console.log(JSON.stringify({
+  ok: response.ok,
+  status: response.status,
+  contentType: response.headers.get("content-type"),
+  rowCount,
+  stateKeys,
+}));

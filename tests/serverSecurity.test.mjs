@@ -7,29 +7,29 @@ process.env.SUPABASE_SERVICE_ROLE_KEY ||= "service_role_test_key";
 process.env.SUPABASE_STORAGE_BUCKET ||= "eagle-rcm-hr-private";
 process.env.AUTH_SECRET ||= "test_secret_value_that_is_long_enough";
 
-const server = await import("../server/production-server.mjs");
+const shared = await import("../app/api/_shared.js");
 
-test("server validates required environment and accepts AUTH_SECRET", () => {
-  const config = server.validateEnv();
+test("Next API shared config validates required environment and accepts AUTH_SECRET", () => {
+  const config = shared.getConfig();
   assert.equal(config.storageBucket, "eagle-rcm-hr-private");
 });
 
 test("signed session verifies and tampering is rejected", () => {
-  const token = server.createSession({ id: "user_employee", employeeId: "emp_006", role: "EMPLOYEE" });
-  const session = server.verifySession(token);
+  const token = shared.createSession({ id: "user_employee", employeeId: "emp_006", role: "EMPLOYEE" });
+  const session = shared.verifySession(token);
   assert.equal(session.userId, "user_employee");
   assert.equal(session.role, "EMPLOYEE");
-  assert.equal(server.verifySession(`${token}tampered`), null);
+  assert.equal(shared.verifySession(`${token}tampered`), null);
 });
 
 test("csrf token is stable for a session and not empty", () => {
-  const token = server.createSession({ id: "user_hr", employeeId: "emp_002", role: "HR_ADMIN" });
-  const first = server.csrfToken(token);
-  const second = server.csrfToken(token);
+  const token = shared.createSession({ id: "user_hr", employeeId: "emp_002", role: "HR_ADMIN" });
+  const first = shared.csrfToken(token);
+  const second = shared.csrfToken(token);
   assert.equal(first, second);
   assert.equal(first.length, 43);
 });
 
 test("state payload validation rejects malformed data", () => {
-  assert.throws(() => server.validateStatePayload({}), /users must be an array/);
+  assert.throws(() => shared.validateStatePayload({}), /users must be an array/);
 });

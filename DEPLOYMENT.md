@@ -2,7 +2,7 @@
 
 ## What Was Wrong
 
-Vercel was configured as a Next.js deployment, but the repository did not have a Next.js App Router entry point. The project originally ran as a Vite app, so Vercel could not detect a valid Next app and failed with:
+Vercel was configured as a Next.js deployment, but the repository did not have a Next.js App Router entry point, so Vercel could not detect a valid Next app and failed with:
 
 ```text
 Error: No Next.js version detected.
@@ -44,7 +44,7 @@ The Vercel project root should be the repository root.
 | Build Command | `pnpm run build` |
 | Output Directory | Leave empty / Vercel default |
 
-Do not set the output directory to `dist` for the Vercel deployment. `dist` is only for the Vite/Docker build path.
+Do not set a custom output directory for the Vercel deployment.
 
 ## Package Manager
 
@@ -90,18 +90,6 @@ pnpm run build
 ```bash
 next build
 ```
-
-## Docker Path Still Exists
-
-The Docker deployment path is preserved separately:
-
-```bash
-pnpm run build:vite
-pnpm run start:docker-server
-docker compose up -d --build
-```
-
-Docker uses the Vite build and the Node production server. Vercel uses the Next.js build.
 
 ## Redeploy Steps
 

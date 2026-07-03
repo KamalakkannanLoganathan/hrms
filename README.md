@@ -1,30 +1,40 @@
 # Eagle RCM HRMS Portal
 
-Employee Self Service, Attendance, Leave, Payroll, Payslip, Reports, and Admin portal for Eagle RCM.
+Production HRMS portal for Employee Self Service, Attendance, Leave, Payroll, Payslips, Reports, and Admin Configuration.
 
-## Current Architecture
+## What The App Does
 
-- Frontend: Vite + React
-- Production server: Node HTTP server in `server/production-server.mjs`
-- Database: Supabase PostgreSQL via direct server-side REST calls
-- Storage: private Supabase Storage bucket
-- Auth: server-side credential login with signed HTTP-only cookies
-- CSRF: same-origin CSRF token for mutating API requests
-- Deployment: Docker behind `hrms.terimarevenue.com`
+- Secure login with server-side sessions, HTTP-only cookies, CSRF protection, and Supabase-backed persistence.
+- Employee master management with departments, designations, managers, shifts, salary structures, and masked bank data.
+- Attendance check-in/check-out, attendance records, correction requests, manager/HR approval flow, and exports.
+- Leave requests, approvals/rejections, paid/unpaid/LOP behavior, leave balances, leave policies, allocations, and ledger entries.
+- Payroll runs, payroll approval/lock, payslip generation/publication, and payroll-ready exports.
+- Payslip viewing/printing with company branding.
+- Report center for HR/payroll exports.
+- Admin Configuration for company branding, departments, designations, holidays, shifts, attendance settings, leave types, leave policies, leave allocation, payroll settings, salary components, roles/permissions, report settings, notification settings, and audit logs.
+- Role-based access for Super Admin, Admin/HR, Payroll Admin, Boss/Owner, Manager/Team Lead, and Employee.
 
-The browser must never receive the Supabase service-role key. All privileged Supabase access happens only inside the Docker server.
+## Required Stack
+
+- Next.js App Router
+- React
+- Supabase PostgreSQL via server-side API routes
+- Supabase private Storage bucket
+- pnpm
+
+The browser must never receive `SUPABASE_SERVICE_ROLE_KEY`. All privileged Supabase access happens inside Next.js API routes.
 
 ## Important Files
 
+- `app/`: Next.js App Router pages and API routes
 - `src/VaultAccess.jsx`: HRMS UI
-- `src/hrCore.js`: business logic, seed data, RBAC helpers
-- `server/production-server.mjs`: production app server and API
+- `src/hrCore.js`: business logic, seed defaults, RBAC helpers
 - `supabase/migrations/001_hrms_app_state.sql`: Supabase table, RLS, and private bucket setup
-- `Dockerfile`: production container
-- `docker-compose.yml`: local/server container orchestration
-- `deploy/nginx-hrms.terimarevenue.com.conf`: nginx reverse proxy sample
+- `scripts/check-supabase-state.mjs`: safe Supabase state validator
+- `ADMIN_CONFIGURATION.md`: Admin Configuration modules, permissions, audit behavior, and business-rule impact
+- `DEPLOYMENT.md`: Vercel deployment settings
+- `tests/`: domain, security, admin configuration, and smoke tests
 - `.env.example`: required environment template
-- `tests/`: domain, server-security, and deployment smoke tests
 
 ## Environment
 
@@ -38,7 +48,6 @@ SUPABASE_URL=https://PROJECT_REF.supabase.co
 SUPABASE_ANON_KEY=...
 SUPABASE_SERVICE_ROLE_KEY=...
 SUPABASE_STORAGE_BUCKET=eagle-rcm-hr-private
-PORT=3000
 ```
 
 `.env.local` is ignored by Git.
@@ -54,29 +63,27 @@ The first successful server read seeds `public.hrms_app_state` automatically fro
 
 ## Local Development
 
-Frontend-only development:
-
 ```bash
 pnpm install
 pnpm run dev
 ```
 
-Production-like server:
-
-```bash
-pnpm run build
-pnpm run start
-```
-
 Open `http://localhost:3000`.
 
-## Docker Deployment
+## Validation Commands
 
 ```bash
-docker compose up -d --build
+pnpm run lint
+pnpm run typecheck
+pnpm test
+pnpm run test:e2e
+pnpm run build
+pnpm run supabase:check
 ```
 
-Container listens on host port `3000`.
+## Deployment
+
+Use Vercel with the settings in `DEPLOYMENT.md`.
 
 Health check:
 
@@ -90,69 +97,10 @@ Expected:
 { "ok": true, "storageBucket": "eagle-rcm-hr-private" }
 ```
 
-## DNS and Subdomain
+## Security Notes
 
-For `hrms.terimarevenue.com`:
-
-- Use a `CNAME` if pointing to a managed proxy/load balancer hostname.
-- Use an `A` record if pointing directly to a VPS/server IP.
-
-Example CNAME:
-
-```text
-Type: CNAME
-Name: hrms
-Value: your-proxy-or-hostname
-```
-
-Use `deploy/nginx-hrms.terimarevenue.com.conf` for nginx reverse proxy with TLS.
-
-## Commands
-
-```bash
-pnpm run lint
-pnpm run typecheck
-pnpm test
-pnpm run test:e2e
-pnpm run build
-pnpm run start
-pnpm run docker:build
-```
-
-## Seeded Login Credentials
-
-Default password:
-
-```text
-Eagle@12345
-```
-
-Seeded users:
-
-- `superadmin@eaglercm.example`
-- `hr@eaglercm.example`
-- `payroll@eaglercm.example`
-- `boss@eaglercm.example`
-- `manager@eaglercm.example`
-- `employee@eaglercm.example`
-
-## Production Notes
-
-Implemented:
-
-- Server-side session cookie
-- CSRF guard for mutations
-- Login rate limiting
-- Server-only Supabase service role use
-- Private storage bucket migration
-- Docker deployment assets
-- Basic direct Supabase persistence
-
-Still recommended:
-
-- Replace broad app-state saves with granular API routes per workflow.
-- Add normalized SQL tables for long-term maintainability.
-- Add upload endpoints with MIME and size validation.
-- Add full Playwright browser e2e and axe accessibility tests.
-- Add 50/500 employee performance fixtures.
-- Add server-generated PDF payslips.
+- The home page does not display seeded credentials.
+- Role permissions are enforced in the UI and server-side state persistence checks.
+- Sensitive state writes to admin modules are blocked unless the actor has the required permission.
+- Supabase RLS denies direct browser access to the app-state table.
+- Private storage access should use signed URLs from the server API.

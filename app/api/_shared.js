@@ -1,6 +1,6 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import bcrypt from "bcryptjs";
-import { DEFAULT_PASSWORD, authenticateUser, seedAppData } from "../../src/hrCore.js";
+import { DEFAULT_PASSWORD, authenticateUser, canPersistStateChange, seedAppData } from "../../src/hrCore.js";
 
 export const APP_STATE_ID = "eagle_rcm";
 export const SESSION_COOKIE = "ercm_session";
@@ -145,6 +145,9 @@ export function validateStatePayload(payload) {
   if (!payload.companySettings?.companyName || String(payload.companySettings.companyName).length > 120) {
     throw new Error("Invalid company settings.");
   }
+  for (const key of ["departments", "designations", "holidays", "shifts", "leaveTypes", "leavePolicies", "salaryComponents"]) {
+    if (payload[key] != null && !Array.isArray(payload[key])) throw new Error(`Invalid state payload: ${key} must be an array.`);
+  }
 }
 
 export function mergeServerOnlyFields(existing, incoming) {
@@ -173,8 +176,8 @@ export function clientStateForUser(data, session) {
   return sanitized;
 }
 
-export function canPersistState(actor) {
-  return ["SUPER_ADMIN", "HR_ADMIN", "PAYROLL_ADMIN", "BOSS", "MANAGER"].includes(actor?.role);
+export function canPersistState(actor, existing, incoming) {
+  return canPersistStateChange(actor, existing, incoming);
 }
 
 export async function login(email, password) {

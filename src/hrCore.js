@@ -23,18 +23,31 @@ export const PERMISSIONS = {
   EMPLOYEE_MANAGE: "employee.manage",
   EMPLOYEE_READ_ALL: "employee.read_all",
   TEAM_READ: "team.read",
+  DEPARTMENT_MANAGE: "department.manage",
+  DESIGNATION_MANAGE: "designation.manage",
+  HOLIDAY_MANAGE: "holiday.manage",
+  SHIFT_MANAGE: "shift.manage",
+  ATTENDANCE_SETTINGS_MANAGE: "attendance.settings.manage",
   ATTENDANCE_SELF: "attendance.self",
   ATTENDANCE_MANAGE: "attendance.manage",
   ATTENDANCE_APPROVE: "attendance.approve",
   LEAVE_SELF: "leave.self",
   LEAVE_MANAGE: "leave.manage",
   LEAVE_APPROVE: "leave.approve",
+  LEAVE_TYPE_MANAGE: "leave.type.manage",
+  LEAVE_POLICY_MANAGE: "leave.policy.manage",
+  LEAVE_ALLOCATION_MANAGE: "leave.allocation.manage",
   PAYROLL_MANAGE: "payroll.manage",
   PAYROLL_APPROVE: "payroll.approve",
+  PAYROLL_SETTINGS_MANAGE: "payroll.settings.manage",
+  SALARY_COMPONENT_MANAGE: "salary.component.manage",
+  ROLE_MANAGE: "roles.manage",
   PAYSLIP_READ_OWN: "payslip.read_own",
   PAYSLIP_READ_ALL: "payslip.read_all",
   REPORTS_HR: "reports.hr",
   REPORTS_PAYROLL: "reports.payroll",
+  REPORT_SETTINGS_MANAGE: "report.settings.manage",
+  NOTIFICATION_SETTINGS_MANAGE: "notification.settings.manage",
   AUDIT_READ: "audit.read",
 };
 
@@ -43,17 +56,30 @@ export const ROLE_PERMISSIONS = {
   [ROLES.HR_ADMIN]: [
     PERMISSIONS.EMPLOYEE_MANAGE,
     PERMISSIONS.EMPLOYEE_READ_ALL,
+    PERMISSIONS.DEPARTMENT_MANAGE,
+    PERMISSIONS.DESIGNATION_MANAGE,
+    PERMISSIONS.HOLIDAY_MANAGE,
+    PERMISSIONS.SHIFT_MANAGE,
+    PERMISSIONS.ATTENDANCE_SETTINGS_MANAGE,
     PERMISSIONS.ATTENDANCE_MANAGE,
     PERMISSIONS.ATTENDANCE_APPROVE,
     PERMISSIONS.LEAVE_MANAGE,
     PERMISSIONS.LEAVE_APPROVE,
+    PERMISSIONS.LEAVE_TYPE_MANAGE,
+    PERMISSIONS.LEAVE_POLICY_MANAGE,
+    PERMISSIONS.LEAVE_ALLOCATION_MANAGE,
     PERMISSIONS.REPORTS_HR,
+    PERMISSIONS.REPORT_SETTINGS_MANAGE,
+    PERMISSIONS.NOTIFICATION_SETTINGS_MANAGE,
     PERMISSIONS.AUDIT_READ,
   ],
   [ROLES.PAYROLL_ADMIN]: [
     PERMISSIONS.PAYROLL_MANAGE,
     PERMISSIONS.PAYSLIP_READ_ALL,
     PERMISSIONS.REPORTS_PAYROLL,
+    PERMISSIONS.PAYROLL_SETTINGS_MANAGE,
+    PERMISSIONS.SALARY_COMPONENT_MANAGE,
+    PERMISSIONS.REPORT_SETTINGS_MANAGE,
     PERMISSIONS.AUDIT_READ,
   ],
   [ROLES.BOSS]: [
@@ -75,6 +101,58 @@ export const ROLE_PERMISSIONS = {
     PERMISSIONS.LEAVE_SELF,
     PERMISSIONS.PAYSLIP_READ_OWN,
   ],
+};
+
+export const PERMISSION_LABELS = {
+  [PERMISSIONS.SETTINGS_MANAGE]: "Company and branding settings",
+  [PERMISSIONS.EMPLOYEE_MANAGE]: "Manage employees",
+  [PERMISSIONS.EMPLOYEE_READ_ALL]: "View all employees",
+  [PERMISSIONS.TEAM_READ]: "View assigned team",
+  [PERMISSIONS.DEPARTMENT_MANAGE]: "Manage departments",
+  [PERMISSIONS.DESIGNATION_MANAGE]: "Manage designations",
+  [PERMISSIONS.HOLIDAY_MANAGE]: "Manage holidays",
+  [PERMISSIONS.SHIFT_MANAGE]: "Manage shifts",
+  [PERMISSIONS.ATTENDANCE_SETTINGS_MANAGE]: "Manage attendance settings",
+  [PERMISSIONS.ATTENDANCE_SELF]: "Employee attendance self service",
+  [PERMISSIONS.ATTENDANCE_MANAGE]: "Manage attendance",
+  [PERMISSIONS.ATTENDANCE_APPROVE]: "Approve attendance corrections",
+  [PERMISSIONS.LEAVE_SELF]: "Employee leave self service",
+  [PERMISSIONS.LEAVE_MANAGE]: "Manage leave",
+  [PERMISSIONS.LEAVE_APPROVE]: "Approve leave",
+  [PERMISSIONS.LEAVE_TYPE_MANAGE]: "Manage leave types",
+  [PERMISSIONS.LEAVE_POLICY_MANAGE]: "Manage leave policies",
+  [PERMISSIONS.LEAVE_ALLOCATION_MANAGE]: "Manage leave allocations",
+  [PERMISSIONS.PAYROLL_MANAGE]: "Process payroll",
+  [PERMISSIONS.PAYROLL_APPROVE]: "Approve and lock payroll",
+  [PERMISSIONS.PAYROLL_SETTINGS_MANAGE]: "Manage payroll settings",
+  [PERMISSIONS.SALARY_COMPONENT_MANAGE]: "Manage salary components",
+  [PERMISSIONS.ROLE_MANAGE]: "Manage roles and permissions",
+  [PERMISSIONS.PAYSLIP_READ_OWN]: "Download own payslips",
+  [PERMISSIONS.PAYSLIP_READ_ALL]: "Download all payslips",
+  [PERMISSIONS.REPORTS_HR]: "Run HR reports",
+  [PERMISSIONS.REPORTS_PAYROLL]: "Run payroll reports",
+  [PERMISSIONS.REPORT_SETTINGS_MANAGE]: "Manage report settings",
+  [PERMISSIONS.NOTIFICATION_SETTINGS_MANAGE]: "Manage notification settings",
+  [PERMISSIONS.AUDIT_READ]: "View audit logs",
+};
+
+export const ADMIN_SECTION_PERMISSIONS = {
+  companySettings: PERMISSIONS.SETTINGS_MANAGE,
+  departments: PERMISSIONS.DEPARTMENT_MANAGE,
+  designations: PERMISSIONS.DESIGNATION_MANAGE,
+  holidays: PERMISSIONS.HOLIDAY_MANAGE,
+  shifts: PERMISSIONS.SHIFT_MANAGE,
+  attendanceSettings: PERMISSIONS.ATTENDANCE_SETTINGS_MANAGE,
+  leaveTypes: PERMISSIONS.LEAVE_TYPE_MANAGE,
+  leavePolicies: PERMISSIONS.LEAVE_POLICY_MANAGE,
+  leaveAllocations: PERMISSIONS.LEAVE_ALLOCATION_MANAGE,
+  leaveLedgers: PERMISSIONS.LEAVE_ALLOCATION_MANAGE,
+  payrollSettings: PERMISSIONS.PAYROLL_SETTINGS_MANAGE,
+  salaryComponents: PERMISSIONS.SALARY_COMPONENT_MANAGE,
+  rolePermissions: PERMISSIONS.ROLE_MANAGE,
+  reportSettings: PERMISSIONS.REPORT_SETTINGS_MANAGE,
+  notificationSettings: PERMISSIONS.NOTIFICATION_SETTINGS_MANAGE,
+  auditLogs: PERMISSIONS.AUDIT_READ,
 };
 
 export const DEFAULT_COMPANY = {
@@ -142,9 +220,82 @@ export function maskBank(accountNumber = "") {
   return `${"*".repeat(Math.max(4, value.length - 4))}${value.slice(-4)}`;
 }
 
-export function hasPermission(user, permission) {
+export function getRolePermissions(role, overrides = {}) {
+  const override = overrides?.[role];
+  return Array.isArray(override) ? override : ROLE_PERMISSIONS[role] || [];
+}
+
+export function hasPermission(user, permission, overrides = {}) {
   if (!user) return false;
-  return (ROLE_PERMISSIONS[user.role] || []).includes(permission);
+  return getRolePermissions(user.role, overrides).includes(permission);
+}
+
+export function canManageAdminSection(user, section, overrides = {}) {
+  if (!user) return false;
+  if (user.role === ROLES.SUPER_ADMIN) return true;
+  const permission = ADMIN_SECTION_PERMISSIONS[section];
+  return Boolean(permission && hasPermission(user, permission, overrides));
+}
+
+export function assertUniqueConfigRecord(items, draft, keys, currentId = "") {
+  for (const key of keys) {
+    const value = String(draft[key] || "").trim().toLowerCase();
+    if (!value) continue;
+    const duplicate = items.find((item) => item.id !== currentId && String(item[key] || "").trim().toLowerCase() === value);
+    if (duplicate) throw new Error(`Duplicate ${key} is not allowed.`);
+  }
+}
+
+const sectionPermissionOptions = {
+  companySettings: [PERMISSIONS.SETTINGS_MANAGE],
+  departments: [PERMISSIONS.DEPARTMENT_MANAGE],
+  designations: [PERMISSIONS.DESIGNATION_MANAGE],
+  holidays: [PERMISSIONS.HOLIDAY_MANAGE],
+  shifts: [PERMISSIONS.SHIFT_MANAGE],
+  attendanceSettings: [PERMISSIONS.ATTENDANCE_SETTINGS_MANAGE],
+  attendanceRecords: [PERMISSIONS.ATTENDANCE_SELF, PERMISSIONS.ATTENDANCE_MANAGE, PERMISSIONS.ATTENDANCE_APPROVE],
+  attendanceCorrections: [PERMISSIONS.ATTENDANCE_SELF, PERMISSIONS.ATTENDANCE_MANAGE, PERMISSIONS.ATTENDANCE_APPROVE],
+  leaveTypes: [PERMISSIONS.LEAVE_TYPE_MANAGE],
+  leavePolicies: [PERMISSIONS.LEAVE_POLICY_MANAGE],
+  leaveAllocations: [PERMISSIONS.LEAVE_ALLOCATION_MANAGE],
+  leaveLedgers: [PERMISSIONS.LEAVE_ALLOCATION_MANAGE, PERMISSIONS.LEAVE_MANAGE, PERMISSIONS.LEAVE_APPROVE],
+  leaveRequests: [PERMISSIONS.LEAVE_SELF, PERMISSIONS.LEAVE_MANAGE, PERMISSIONS.LEAVE_APPROVE],
+  payrollSettings: [PERMISSIONS.PAYROLL_SETTINGS_MANAGE],
+  payrollSettingsVersions: [PERMISSIONS.PAYROLL_SETTINGS_MANAGE],
+  payrollAdjustments: [PERMISSIONS.PAYROLL_MANAGE],
+  payrollRuns: [PERMISSIONS.PAYROLL_MANAGE, PERMISSIONS.PAYROLL_APPROVE],
+  payrollRunEmployees: [PERMISSIONS.PAYROLL_MANAGE],
+  payslips: [PERMISSIONS.PAYROLL_MANAGE],
+  salaryComponents: [PERMISSIONS.SALARY_COMPONENT_MANAGE],
+  salaryStructures: [PERMISSIONS.EMPLOYEE_MANAGE, PERMISSIONS.PAYROLL_MANAGE],
+  rolePermissions: [PERMISSIONS.ROLE_MANAGE],
+  permissionsCatalog: [PERMISSIONS.ROLE_MANAGE],
+  reportSettings: [PERMISSIONS.REPORT_SETTINGS_MANAGE],
+  notificationSettings: [PERMISSIONS.NOTIFICATION_SETTINGS_MANAGE],
+  notifications: [PERMISSIONS.NOTIFICATION_SETTINGS_MANAGE, PERMISSIONS.LEAVE_APPROVE, PERMISSIONS.PAYROLL_MANAGE],
+  users: [PERMISSIONS.EMPLOYEE_MANAGE, PERMISSIONS.ROLE_MANAGE],
+  employees: [PERMISSIONS.EMPLOYEE_MANAGE],
+  uploadedFiles: [PERMISSIONS.SETTINGS_MANAGE, PERMISSIONS.LEAVE_MANAGE],
+};
+
+function stableJson(value) {
+  return JSON.stringify(value ?? null);
+}
+
+export function changedStateSections(existing, incoming) {
+  const keys = new Set([...Object.keys(existing || {}), ...Object.keys(incoming || {})]);
+  return [...keys].filter((key) => stableJson(existing?.[key]) !== stableJson(incoming?.[key]));
+}
+
+export function canPersistStateChange(actor, existing, incoming) {
+  if (!actor) return false;
+  if (actor.role === ROLES.SUPER_ADMIN) return true;
+  const changed = changedStateSections(existing, incoming).filter((section) => section !== "auditLogs");
+  if (!changed.length) return actor.role !== ROLES.EMPLOYEE;
+  return changed.every((section) => {
+    const options = sectionPermissionOptions[section];
+    return Array.isArray(options) && options.some((permission) => hasPermission(actor, permission, existing?.rolePermissions));
+  });
 }
 
 export function authenticateUser(users, email, password) {
@@ -755,6 +906,7 @@ function salaryItems(gross) {
 }
 
 export function seedAppData() {
+  const stamp = { createdBy: "user_super", updatedBy: "user_super", createdAt: nowIso(), updatedAt: nowIso() };
   const users = [
     ["user_super", "superadmin@eaglercm.example", "Super Admin", ROLES.SUPER_ADMIN, "emp_001"],
     ["user_hr", "hr@eaglercm.example", "HR Admin", ROLES.HR_ADMIN, "emp_002"],
@@ -777,54 +929,85 @@ export function seedAppData() {
     updatedAt: nowIso(),
   }));
   const departments = [
-    { id: "dept_ops", name: "Operations", code: "OPS", active: true },
-    { id: "dept_ar", name: "Accounts Receivable", code: "AR", active: true },
-    { id: "dept_coding", name: "Medical Coding", code: "COD", active: true },
-    { id: "dept_hr", name: "Human Resources", code: "HR", active: true },
-    { id: "dept_fin", name: "Finance", code: "FIN", active: true },
+    { id: "dept_ops", name: "Operations", code: "OPS", description: "RCM operations delivery", departmentHeadId: "emp_005", active: true, status: "active", ...stamp },
+    { id: "dept_cred", name: "Credentialing", code: "CRED", description: "Provider credentialing and enrollments", departmentHeadId: "emp_005", active: true, status: "active", ...stamp },
+    { id: "dept_ar", name: "AR Calling", code: "AR", description: "Accounts receivable calling", departmentHeadId: "emp_005", active: true, status: "active", ...stamp },
+    { id: "dept_posting", name: "Payment Posting", code: "POSTING", description: "Payment posting operations", departmentHeadId: "emp_005", active: true, status: "active", ...stamp },
+    { id: "dept_charge", name: "Charge Entry", code: "CHARGE", description: "Charge entry and billing", departmentHeadId: "emp_005", active: true, status: "active", ...stamp },
+    { id: "dept_demo", name: "Demo Entry", code: "DEMO", description: "Demographic entry and corrections", departmentHeadId: "emp_005", active: true, status: "active", ...stamp },
+    { id: "dept_eligibility", name: "Eligibility Verification", code: "ELIG", description: "Patient eligibility verification", departmentHeadId: "emp_005", active: true, status: "active", ...stamp },
+    { id: "dept_coding", name: "Coding", code: "CODING", description: "Medical coding", departmentHeadId: "emp_005", active: true, status: "active", ...stamp },
+    { id: "dept_mgmt", name: "Management", code: "MGMT", description: "Leadership and management", departmentHeadId: "emp_004", active: true, status: "active", ...stamp },
+    { id: "dept_hr", name: "HR", code: "HR", description: "Human resources", departmentHeadId: "emp_002", active: true, status: "active", ...stamp },
+    { id: "dept_fin", name: "Payroll", code: "PAYROLL", description: "Payroll and finance operations", departmentHeadId: "emp_003", active: true, status: "active", ...stamp },
   ];
   const designations = [
-    { id: "des_exec", name: "Billing Executive", departmentId: "dept_ops" },
-    { id: "des_senior", name: "Senior AR Specialist", departmentId: "dept_ar" },
-    { id: "des_coder", name: "Certified Coder", departmentId: "dept_coding" },
-    { id: "des_hr", name: "HR Executive", departmentId: "dept_hr" },
-    { id: "des_mgr", name: "Team Lead", departmentId: "dept_ops" },
-    { id: "des_owner", name: "Owner", departmentId: "dept_fin" },
+    { id: "des_exec", name: "Executive", code: "EXEC", departmentId: "dept_ops", level: "L1", description: "Entry-level process executive", active: true, status: "active", ...stamp },
+    { id: "des_senior", name: "Senior Executive", code: "SREXEC", departmentId: "dept_ar", level: "L2", description: "Experienced process executive", active: true, status: "active", ...stamp },
+    { id: "des_team_lead", name: "Team Lead", code: "TL", departmentId: "dept_ops", level: "L3", description: "Team delivery lead", active: true, status: "active", ...stamp },
+    { id: "des_asst_mgr", name: "Assistant Manager", code: "AM", departmentId: "dept_ops", level: "L4", description: "Assistant operations manager", active: true, status: "active", ...stamp },
+    { id: "des_mgr", name: "Manager", code: "MGR", departmentId: "dept_ops", level: "L5", description: "Department manager", active: true, status: "active", ...stamp },
+    { id: "des_hr", name: "HR Executive", code: "HREXEC", departmentId: "dept_hr", level: "L2", description: "HR operations executive", active: true, status: "active", ...stamp },
+    { id: "des_payroll", name: "Payroll Executive", code: "PAYEXEC", departmentId: "dept_fin", level: "L2", description: "Payroll operations executive", active: true, status: "active", ...stamp },
+    { id: "des_admin", name: "Admin", code: "ADMIN", departmentId: "dept_mgmt", level: "L4", description: "Administration owner", active: true, status: "active", ...stamp },
+    { id: "des_cred_lead", name: "Credentialing Lead", code: "CREDLEAD", departmentId: "dept_cred", level: "L3", description: "Credentialing team lead", active: true, status: "active", ...stamp },
+    { id: "des_ar_caller", name: "AR Caller", code: "ARCALLER", departmentId: "dept_ar", level: "L1", description: "AR calling executive", active: true, status: "active", ...stamp },
+    { id: "des_posting_exec", name: "Payment Posting Executive", code: "PPEXEC", departmentId: "dept_posting", level: "L1", description: "Payment posting executive", active: true, status: "active", ...stamp },
+    { id: "des_coder", name: "Certified Coder", code: "CODER", departmentId: "dept_coding", level: "L2", description: "Certified medical coder", active: true, status: "active", ...stamp },
+    { id: "des_owner", name: "Owner", code: "OWNER", departmentId: "dept_mgmt", level: "L7", description: "Business owner", active: true, status: "active", ...stamp },
   ];
   const shifts = [
     {
       id: "shift_general",
       name: "General Shift",
-      startTime: "09:30",
-      endTime: "18:30",
+      code: "GENERAL",
+      startTime: "09:00",
+      endTime: "18:00",
+      breakMinutes: 60,
       graceMinutes: 10,
       minimumFullDayHours: 8,
       minimumHalfDayHours: 4,
+      lateMarkThresholdMinutes: 10,
+      earlyExitThresholdMinutes: 10,
+      nightShift: false,
       weeklyOffs: ["Saturday", "Sunday"],
+      isDefault: true,
+      description: "Default Eagle RCM day shift",
       active: true,
+      status: "active",
+      ...stamp,
     },
     {
       id: "shift_evening",
       name: "US Evening Shift",
+      code: "EVENING",
       startTime: "18:00",
       endTime: "03:00",
+      breakMinutes: 60,
       graceMinutes: 15,
       minimumFullDayHours: 8,
       minimumHalfDayHours: 4,
+      lateMarkThresholdMinutes: 15,
+      earlyExitThresholdMinutes: 10,
+      nightShift: true,
       weeklyOffs: ["Saturday", "Sunday"],
+      isDefault: false,
+      description: "US client support shift crossing midnight",
       active: true,
+      status: "active",
+      ...stamp,
     },
   ];
   const holidays = [
-    { id: "hol_2026_01", name: "Republic Day", date: "2026-01-26" },
-    { id: "hol_2026_08", name: "Independence Day", date: "2026-08-15" },
-    { id: "hol_2026_10", name: "Diwali", date: "2026-11-08" },
+    { id: "hol_2026_01", name: "Republic Day", date: "2026-01-26", type: "national", location: "India", departmentId: "all", paid: true, recurringYearly: true, description: "National holiday", active: true, status: "active", ...stamp },
+    { id: "hol_2026_08", name: "Independence Day", date: "2026-08-15", type: "national", location: "India", departmentId: "all", paid: true, recurringYearly: true, description: "National holiday", active: true, status: "active", ...stamp },
+    { id: "hol_2026_10", name: "Diwali", date: "2026-11-08", type: "regional", location: "Tamil Nadu", departmentId: "all", paid: true, recurringYearly: false, description: "Festival holiday", active: true, status: "active", ...stamp },
   ];
   const leaveTypes = [
-    { id: "lt_cl", name: "Casual Leave", code: "CL", paid: true, monthlyAccrual: 1, yearlyAccrual: 12, carryForwardAllowed: true, carryForwardLimit: 6, maxBalance: 18, allowNegativeBalance: false, requiresApproval: true, halfDayAllowed: true, documentRequired: false, countsTowardLop: false, active: true },
-    { id: "lt_sl", name: "Sick Leave", code: "SL", paid: true, monthlyAccrual: 0.5, yearlyAccrual: 6, carryForwardAllowed: false, carryForwardLimit: 0, maxBalance: 6, allowNegativeBalance: false, requiresApproval: true, halfDayAllowed: true, documentRequired: false, countsTowardLop: false, active: true },
-    { id: "lt_lop", name: "Unpaid Leave / LOP", code: "LOP", paid: false, monthlyAccrual: 0, yearlyAccrual: 0, carryForwardAllowed: false, carryForwardLimit: 0, maxBalance: 0, allowNegativeBalance: true, requiresApproval: true, halfDayAllowed: true, documentRequired: false, countsTowardLop: true, active: true },
-    { id: "lt_co", name: "Comp Off", code: "CO", paid: true, monthlyAccrual: 0, yearlyAccrual: 0, carryForwardAllowed: true, carryForwardLimit: 4, maxBalance: 8, allowNegativeBalance: false, requiresApproval: true, halfDayAllowed: true, documentRequired: false, countsTowardLop: false, active: true },
+    { id: "lt_cl", name: "Casual Leave", code: "CL", paid: true, color: "#2563EB", description: "Planned personal leave", monthlyAccrual: 1, yearlyAccrual: 12, carryForwardAllowed: true, carryForwardLimit: 6, maxBalance: 18, allowNegativeBalance: false, requiresApproval: true, halfDayAllowed: true, documentRequired: false, countsTowardLop: false, accrualBased: true, visibleInEss: true, active: true, status: "active", ...stamp },
+    { id: "lt_sl", name: "Sick Leave", code: "SL", paid: true, color: "#059669", description: "Medical leave", monthlyAccrual: 0.5, yearlyAccrual: 6, carryForwardAllowed: false, carryForwardLimit: 0, maxBalance: 6, allowNegativeBalance: false, requiresApproval: true, halfDayAllowed: true, documentRequired: false, countsTowardLop: false, accrualBased: true, visibleInEss: true, active: true, status: "active", ...stamp },
+    { id: "lt_lop", name: "Unpaid Leave / LOP", code: "LOP", paid: false, color: "#DC2626", description: "Unpaid leave that affects payroll", monthlyAccrual: 0, yearlyAccrual: 0, carryForwardAllowed: false, carryForwardLimit: 0, maxBalance: 0, allowNegativeBalance: true, requiresApproval: true, halfDayAllowed: true, documentRequired: false, countsTowardLop: true, accrualBased: false, visibleInEss: true, active: true, status: "active", ...stamp },
+    { id: "lt_co", name: "Comp Off", code: "CO", paid: true, color: "#7C3AED", description: "Compensatory off credited before usage", monthlyAccrual: 0, yearlyAccrual: 0, carryForwardAllowed: true, carryForwardLimit: 4, maxBalance: 8, allowNegativeBalance: false, requiresApproval: true, halfDayAllowed: true, documentRequired: false, countsTowardLop: false, accrualBased: false, visibleInEss: true, active: true, status: "active", ...stamp },
   ];
   const employees = [
     ["emp_001", "ERCM0001", "Aarav", "Raman", "dept_fin", "des_owner", "", ROLES.SUPER_ADMIN, 150000],
@@ -874,14 +1057,22 @@ export function seedAppData() {
     updatedAt: nowIso(),
   }));
   const salaryComponents = [
-    { id: "sc_basic", name: "Basic Salary", code: "BASIC", type: "earning", calculationType: "percentage", percentageBase: "gross", defaultAmount: 40, displayOnPayslip: true, taxable: true, recurring: true, sortOrder: 1, active: true },
-    { id: "sc_hra", name: "House Rent Allowances", code: "HRA", type: "earning", calculationType: "percentage", percentageBase: "gross", defaultAmount: 20, displayOnPayslip: true, taxable: true, recurring: true, sortOrder: 2, active: true },
-    { id: "sc_conv", name: "Conveyance Allowances", code: "CONVEYANCE", type: "earning", calculationType: "percentage", percentageBase: "gross", defaultAmount: 10, displayOnPayslip: true, taxable: true, recurring: true, sortOrder: 3, active: true },
-    { id: "sc_medical", name: "Medical Allowances", code: "MEDICAL", type: "earning", calculationType: "percentage", percentageBase: "gross", defaultAmount: 5, displayOnPayslip: true, taxable: true, recurring: true, sortOrder: 4, active: true },
-    { id: "sc_special", name: "Special Allowances", code: "SPECIAL", type: "earning", calculationType: "percentage", percentageBase: "gross", defaultAmount: 25, displayOnPayslip: true, taxable: true, recurring: true, sortOrder: 5, active: true },
-    { id: "sc_ot", name: "Over Time Pay", code: "OT", type: "earning", calculationType: "variable", percentageBase: "", defaultAmount: 0, displayOnPayslip: true, taxable: true, recurring: false, sortOrder: 6, active: true },
-    { id: "sc_lop", name: "LOP", code: "LOP", type: "deduction", calculationType: "formula", percentageBase: "gross", defaultAmount: 0, displayOnPayslip: true, taxable: false, recurring: false, sortOrder: 20, active: true },
-    { id: "sc_advance", name: "Advance", code: "ADVANCE", type: "deduction", calculationType: "variable", percentageBase: "", defaultAmount: 0, displayOnPayslip: true, taxable: false, recurring: false, sortOrder: 21, active: true },
+    { id: "sc_basic", name: "Basic Salary", code: "BASIC", type: "earning", calculationType: "percentage", percentageBase: "gross", defaultAmount: 40, displayOnPayslip: true, taxable: true, recurring: true, sortOrder: 1, effectiveFrom: "2026-01-01", active: true, ...stamp },
+    { id: "sc_hra", name: "House Rent Allowances", code: "HRA", type: "earning", calculationType: "percentage", percentageBase: "gross", defaultAmount: 20, displayOnPayslip: true, taxable: true, recurring: true, sortOrder: 2, effectiveFrom: "2026-01-01", active: true, ...stamp },
+    { id: "sc_conv", name: "Conveyance Allowances", code: "CONVEYANCE", type: "earning", calculationType: "percentage", percentageBase: "gross", defaultAmount: 10, displayOnPayslip: true, taxable: true, recurring: true, sortOrder: 3, effectiveFrom: "2026-01-01", active: true, ...stamp },
+    { id: "sc_medical", name: "Medical Allowances", code: "MEDICAL", type: "earning", calculationType: "percentage", percentageBase: "gross", defaultAmount: 5, displayOnPayslip: true, taxable: true, recurring: true, sortOrder: 4, effectiveFrom: "2026-01-01", active: true, ...stamp },
+    { id: "sc_special", name: "Special Allowances", code: "SPECIAL", type: "earning", calculationType: "percentage", percentageBase: "gross", defaultAmount: 25, displayOnPayslip: true, taxable: true, recurring: true, sortOrder: 5, effectiveFrom: "2026-01-01", active: true, ...stamp },
+    { id: "sc_ot", name: "Over Time Pay", code: "OT", type: "earning", calculationType: "manual", percentageBase: "", defaultAmount: 0, displayOnPayslip: true, taxable: true, recurring: false, sortOrder: 6, effectiveFrom: "2026-01-01", active: true, ...stamp },
+    { id: "sc_bonus", name: "Bonus", code: "BONUS", type: "earning", calculationType: "manual", percentageBase: "", defaultAmount: 0, displayOnPayslip: true, taxable: true, recurring: false, sortOrder: 7, effectiveFrom: "2026-01-01", active: true, ...stamp },
+    { id: "sc_incentive", name: "Incentive", code: "INCENTIVE", type: "earning", calculationType: "manual", percentageBase: "", defaultAmount: 0, displayOnPayslip: true, taxable: true, recurring: false, sortOrder: 8, effectiveFrom: "2026-01-01", active: true, ...stamp },
+    { id: "sc_other_earning", name: "Other Earning", code: "OTHER_EARNING", type: "earning", calculationType: "manual", percentageBase: "", defaultAmount: 0, displayOnPayslip: true, taxable: true, recurring: false, sortOrder: 9, effectiveFrom: "2026-01-01", active: true, ...stamp },
+    { id: "sc_lop", name: "LOP", code: "LOP", type: "deduction", calculationType: "formula", percentageBase: "gross", defaultAmount: 0, displayOnPayslip: true, taxable: false, recurring: false, sortOrder: 20, effectiveFrom: "2026-01-01", active: true, ...stamp },
+    { id: "sc_advance", name: "Advance", code: "ADVANCE", type: "deduction", calculationType: "manual", percentageBase: "", defaultAmount: 0, displayOnPayslip: true, taxable: false, recurring: false, sortOrder: 21, effectiveFrom: "2026-01-01", active: true, ...stamp },
+    { id: "sc_pf", name: "PF", code: "PF", type: "deduction", calculationType: "percentage", percentageBase: "basic", defaultAmount: 12, displayOnPayslip: false, taxable: false, recurring: true, sortOrder: 22, effectiveFrom: "2026-01-01", active: false, ...stamp },
+    { id: "sc_esi", name: "ESI", code: "ESI", type: "deduction", calculationType: "percentage", percentageBase: "gross", defaultAmount: 0.75, displayOnPayslip: false, taxable: false, recurring: true, sortOrder: 23, effectiveFrom: "2026-01-01", active: false, ...stamp },
+    { id: "sc_tds", name: "TDS", code: "TDS", type: "deduction", calculationType: "manual", percentageBase: "", defaultAmount: 0, displayOnPayslip: false, taxable: false, recurring: false, sortOrder: 24, effectiveFrom: "2026-01-01", active: false, ...stamp },
+    { id: "sc_pt", name: "Professional Tax", code: "PT", type: "deduction", calculationType: "fixed", percentageBase: "", defaultAmount: 0, displayOnPayslip: false, taxable: false, recurring: true, sortOrder: 25, effectiveFrom: "2026-01-01", active: false, ...stamp },
+    { id: "sc_other_deduction", name: "Other Deduction", code: "OTHER_DEDUCTION", type: "deduction", calculationType: "manual", percentageBase: "", defaultAmount: 0, displayOnPayslip: true, taxable: false, recurring: false, sortOrder: 26, effectiveFrom: "2026-01-01", active: true, ...stamp },
   ];
   const salaryStructures = employees.map((employee) => ({
     id: `salary_${employee.id}`,
@@ -964,8 +1155,97 @@ export function seedAppData() {
       updatedAt: nowIso(),
     },
   ];
+  const payrollSettings = {
+    id: "payroll_settings_current",
+    payrollCycle: "monthly",
+    salaryCalculationBasis: "calendar_days",
+    defaultSalaryDays: 30,
+    payrollMonthClosingDay: 25,
+    attendanceLockDay: 26,
+    payrollApprovalRequired: true,
+    bossApprovalRequired: true,
+    payslipPublishMode: "manual",
+    lopCalculationMethod: "gross_calendar_days",
+    halfDayDeductionRule: 0.5,
+    overtimeEnabled: false,
+    overtimeCalculationMethod: "manual",
+    advanceDeductionEnabled: true,
+    roundingMethod: "nearest_rupee",
+    currency: "INR",
+    amountFormat: "en-IN",
+    payslipNumberFormat: "ERCM-{YYYY}-{MM}-{EMP}",
+    exportFormat: "csv_xlsx",
+    effectiveFrom: "2026-01-01",
+    version: 1,
+    status: "active",
+    ...stamp,
+  };
+  const attendanceSettings = {
+    id: "attendance_settings_current",
+    allowEmployeeCheckIn: true,
+    allowEmployeeCheckOut: true,
+    allowMissedPunchRequest: true,
+    allowAttendanceCorrectionRequest: true,
+    maxCorrectionRequestDaysBack: 7,
+    requireCorrectionReason: true,
+    requireManagerApproval: true,
+    requireHrApproval: false,
+    lateMarkBehavior: "mark_late_after_grace",
+    halfDayBehavior: "below_half_day_hours",
+    autoAbsentIfNoCheckIn: true,
+    autoHalfDayIfNoCheckout: true,
+    allowWorkOnHoliday: true,
+    allowWorkOnWeeklyOff: true,
+    attendanceLockAfterPayroll: true,
+    ...stamp,
+  };
+  const reportSettings = {
+    id: "report_settings_current",
+    showLogo: true,
+    companyHeader: DEFAULT_COMPANY.reportHeader,
+    dateFormat: DEFAULT_COMPANY.dateFormat,
+    payrollExportColumns: ["Employee ID", "Employee Name", "Payroll Month", "Payable Days", "Gross Monthly Salary", "Net Pay", "Masked Bank Account Number", "IFSC Code"],
+    attendanceExportColumns: ["Date", "Employee ID", "Name", "Status", "Check In", "Check Out", "Hours"],
+    leaveExportColumns: ["Employee ID", "Name", "Leave Type", "Balance"],
+    maskBankAccountInExports: true,
+    payrollExportPermission: PERMISSIONS.REPORTS_PAYROLL,
+    employeeMasterExportPermission: PERMISSIONS.REPORTS_HR,
+    ...stamp,
+  };
+  const notificationSettings = {
+    id: "notification_settings_current",
+    notifyManagerOnLeaveRequest: true,
+    notifyHrOnLeaveRequest: true,
+    notifyEmployeeOnApprovalRejection: true,
+    notifyEmployeeOnPayslipPublished: true,
+    notifyPayrollAdminMissingAttendance: true,
+    notifyBossPayrollReady: true,
+    emailEnabled: false,
+    inAppEnabled: true,
+    ...stamp,
+  };
+  const leavePolicyRules = leaveTypes.map((type) => ({
+    id: `policy_standard_${type.code.toLowerCase()}`,
+    leaveTypeId: type.id,
+    openingBalance: type.code === "CL" ? 6 : type.code === "SL" ? 3 : 0,
+    monthlyAccrual: type.monthlyAccrual,
+    yearlyQuota: type.yearlyAccrual,
+    maxBalance: type.maxBalance,
+    carryForwardAllowed: type.carryForwardAllowed,
+    carryForwardLimit: type.carryForwardLimit,
+    expiryRule: type.carryForwardAllowed ? "end_of_next_year" : "end_of_leave_year",
+    negativeBalanceAllowed: type.allowNegativeBalance,
+    maxConsecutiveDays: type.code === "LOP" ? 30 : 5,
+    maxApplicationsPerMonth: 3,
+    probationApplicable: type.code === "LOP",
+    encashmentAllowed: false,
+    deductWeeklyOffs: false,
+    deductHolidays: false,
+  }));
   return {
     companySettings: DEFAULT_COMPANY,
+    rolePermissions: Object.fromEntries(Object.entries(ROLE_PERMISSIONS).map(([role, permissions]) => [role, [...permissions]])),
+    permissionsCatalog: Object.entries(PERMISSION_LABELS).map(([permission, label]) => ({ permission, label })),
     users,
     employees,
     departments,
@@ -977,11 +1257,30 @@ export function seedAppData() {
       {
         id: "policy_standard",
         name: "Standard Eagle RCM Leave Policy",
+        code: "STANDARD",
+        applicableDepartmentIds: ["all"],
+        applicableDesignationIds: ["all"],
+        employmentTypes: ["full_time"],
+        leaveYearStartMonth: 1,
+        leaveYearEndMonth: 12,
+        accrualFrequency: "monthly",
+        effectiveFrom: "2026-01-01",
         active: true,
+        status: "active",
         approvalFlow: ["manager", "hr"],
-        rules: leaveTypes.map((type) => ({ leaveTypeId: type.id, monthlyAccrual: type.monthlyAccrual, maxBalance: type.maxBalance })),
+        rules: leavePolicyRules,
+        ...stamp,
       },
     ],
+    leaveAllocations: employees.map((employee) => ({
+      id: `allocation_${employee.id}`,
+      employeeId: employee.id,
+      leavePolicyId: "policy_standard",
+      effectiveFrom: employee.joiningDate,
+      status: "active",
+      reason: "Seed policy assignment",
+      ...stamp,
+    })),
     leaveLedgers: [
       { id: uid("ledger"), employeeId: "emp_006", leaveTypeId: "lt_cl", source: "leave_approval", referenceId: "leave_seed_approved", days: -1, note: "Approved CL", createdAt: nowIso() },
       ...leaveLedgers,
@@ -1010,6 +1309,11 @@ export function seedAppData() {
       { id: "adj_advance", employeeId: "emp_006", year: 2026, month: 6, componentCode: "ADVANCE", type: "deduction", amount: 0, units: 0, remarks: "No advance" },
       { id: "adj_ot", employeeId: "emp_006", year: 2026, month: 6, componentCode: "OT", type: "earning", amount: 0, units: 0, remarks: "No OT" },
     ],
+    payrollSettings,
+    payrollSettingsVersions: [{ ...payrollSettings, id: "payroll_settings_v1", supersededAt: "" }],
+    attendanceSettings,
+    reportSettings,
+    notificationSettings,
     payrollRuns: [],
     payrollRunEmployees: [],
     payslips: [],
